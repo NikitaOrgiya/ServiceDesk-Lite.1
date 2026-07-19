@@ -47,6 +47,7 @@ active profile (`employee` or `admin`) — see `admin_set_ticket_assignee`.
 | 10 | `table_grants` | `REVOKE ALL` then minimal `GRANT SELECT` |
 | 11 | `function_grants_and_hardening` | `REVOKE`/`GRANT EXECUTE` for every function + an automated `search_path` audit |
 | 12 | `admin_bootstrap_hardening` | `private` schema + `private.set_profile_role()`, updates `guard_profile_mutation()` (stage 3) |
+| 13 | `profile_visibility_for_related_tickets` | `can_view_profile()`, replaces the `profiles` SELECT policy (stage 4) |
 
 Once committed, a migration is never edited again — fixes are new
 migrations. Note: `is_admin()` was needed one migration earlier than
@@ -54,6 +55,15 @@ originally planned (04) to back a profile-mutation guard, so that guard
 trigger lives in migration 05 instead, right after `is_admin()` is defined.
 Migration 12 (stage 3) follows the same rule: it does not edit migration 05,
 it replaces `guard_profile_mutation()` via `CREATE OR REPLACE` in a new file.
+Migration 13 (stage 4) follows it again: `profiles_select_own_or_admin`
+(migration 09) only let an employee see their own row or an admin see
+everyone's — not enough once the employee cabinet needs to show an
+assignee's or a comment author's name on the employee's *own* ticket. This
+migration `DROP POLICY`s the old one and `CREATE POLICY`s a replacement
+driven by `can_view_profile(id)`: true for self, an active admin, or a
+profile referenced as author/assignee on a ticket the caller authored, or
+as the actor of a comment/history row on such a ticket. Migration 09's file
+is untouched.
 
 ## RPCs
 
@@ -290,17 +300,24 @@ proxy) — only the registry API hosts themselves are reachable, not the
 actual image layers. This is an environment limitation, not a schema
 problem.
 
-Every migration (now including migration 12), `seed.sql`,
+Every migration (now including migrations 12 and 13), `seed.sql`,
 `security_assertions.sql`, `functional_checks.sql`, and
 `admin_bootstrap_checks.sql` in this repository **was** verified end-to-end
 against a real PostgreSQL 16 server (installed natively in the sandbox, no
 Docker) with a minimal hand-built stand-in for the parts of Supabase's
 `auth` schema the migrations reference (`auth.users`, `auth.uid()`) and the
 `anon`/`authenticated`/`service_role` roles — applied to a freshly created
-database, from empty, repeatedly, always cleanly. TypeScript type generation
-(`supabase gen types typescript --local`) does require the Docker-based
-stack (or a linked real project) and could not be run — `src/types/database.ts`
-remains the stage-1 placeholder pending a stage where one is reachable.
+database, from empty, repeatedly, always cleanly. Migration 13's
+`can_view_profile()` was additionally checked with an ad hoc scenario
+(employee A authors a ticket, an admin assigns it to employee B and
+comments on it): A can then see B's and the admin's profile rows, an
+unrelated employee C cannot see B's, and B (the assignee, not the author)
+cannot see A's just from being assigned — visibility is one-directional,
+scoped to tickets the caller themselves authored. TypeScript type
+generation (`supabase gen types typescript --local`) does require the
+Docker-based stack (or a linked real project) and could not be run —
+`src/types/database.ts` remains the stage-1 placeholder pending a stage
+where one is reachable.
 
 ### Normal usage (once Docker/network access, or a real Supabase project, is available)
 

@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, ListTodo, UserX } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { StatCard } from "@/features/tickets/stat-card";
+import { StatCard } from "@/features/tickets/components/stat-card";
 
 // Demo values only — real aggregates arrive once the Supabase schema and
 // admin-facing queries are built in a later stage.

@@ -4,8 +4,10 @@ import {
   categoryOptions,
   formatCategory,
   formatPriority,
+  formatStatus,
   priorityOptions,
-} from "@/features/tickets/labels";
+  statusOptions,
+} from "@/features/tickets/utils/labels";
 
 describe("formatCategory", () => {
   it("formats every category into Russian", () => {
@@ -32,5 +34,21 @@ describe("formatPriority", () => {
 
   it("exposes an option for every priority", () => {
     expect(priorityOptions).toHaveLength(4);
+  });
+});
+
+describe("formatStatus", () => {
+  it("formats every status into Russian", () => {
+    expect(formatStatus("new")).toBe("Новая");
+    expect(formatStatus("accepted")).toBe("Принята");
+    expect(formatStatus("in_progress")).toBe("В работе");
+    expect(formatStatus("waiting")).toBe("Ожидание");
+    expect(formatStatus("resolved")).toBe("Решена");
+    expect(formatStatus("closed")).toBe("Закрыта");
+    expect(formatStatus("cancelled")).toBe("Отменена");
+  });
+
+  it("exposes an option for every status", () => {
+    expect(statusOptions).toHaveLength(7);
   });
 });

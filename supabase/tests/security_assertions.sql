@@ -163,6 +163,7 @@ DECLARE
   v_allowed TEXT[] := ARRAY[
     'is_admin',
     'can_access_ticket',
+    'can_view_profile',
     'create_ticket',
     'add_ticket_comment',
     'cancel_own_ticket',

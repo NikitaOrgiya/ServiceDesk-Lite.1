@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createTicketSchema } from "@/features/tickets/schema";
+import { createTicketSchema } from "@/features/tickets/schemas/create-ticket";
 
 const validTicket = {
   title: "Не работает принтер",
@@ -52,7 +52,10 @@ describe("createTicketSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("does not accept server-assigned fields as part of the schema shape", () => {
+  it("never accepts server-assigned fields as part of the schema shape", () => {
+    // author_id/public_number/status/assignee_id/created_at must never be
+    // parseable inputs — the Server Action only ever reads these four keys
+    // out of FormData in the first place (see actions/create-ticket.ts).
     expect(Object.keys(createTicketSchema.shape)).toEqual([
       "title",
       "description",

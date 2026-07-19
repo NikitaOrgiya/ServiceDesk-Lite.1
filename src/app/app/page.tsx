@@ -1,18 +1,25 @@
 import { CheckCircle2, CircleDot, Clock, Loader2 } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { StatCard } from "@/features/tickets/stat-card";
+import { StatCard } from "@/features/tickets/components/stat-card";
+import { getEmployeeDashboardCounts } from "@/features/tickets/queries/get-employee-dashboard";
+import { getTicketErrorMessage } from "@/features/tickets/utils/error-messages";
 
-// Demo values only — the dashboard has no real ticket data until stage 2
-// connects it to the Supabase schema and RLS-protected queries.
-const DEMO_STATS = [
-  { label: "Открытые", value: 0, icon: CircleDot },
-  { label: "В работе", value: 0, icon: Loader2 },
-  { label: "Ожидающие", value: 0, icon: Clock },
-  { label: "Завершённые", value: 0, icon: CheckCircle2 },
-] as const;
+// Rendered fresh per request — this reads the caller's own RLS-scoped
+// ticket counts, so it must never be statically cached or shared across
+// users via Next.js's data cache.
+export const dynamic = "force-dynamic";
 
-export default function EmployeeDashboardPage() {
+export default async function EmployeeDashboardPage() {
+  const counts = await getEmployeeDashboardCounts();
+
+  const stats = [
+    { label: "Открытые", value: counts?.open ?? 0, icon: CircleDot },
+    { label: "В работе", value: counts?.inProgress ?? 0, icon: Loader2 },
+    { label: "Ожидающие", value: counts?.waiting ?? 0, icon: Clock },
+    { label: "Завершённые", value: counts?.done ?? 0, icon: CheckCircle2 },
+  ] as const;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -23,18 +30,17 @@ export default function EmployeeDashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {DEMO_STATS.map((stat) => (
+        {stats.map((stat) => (
           <StatCard key={stat.label} {...stat} />
         ))}
       </div>
 
-      <Alert>
-        <AlertTitle>Демонстрационные данные</AlertTitle>
-        <AlertDescription>
-          Показатели пока нулевые — реальные заявки появятся после того, как
-          на следующем этапе будет подключена база данных.
-        </AlertDescription>
-      </Alert>
+      {counts === null ? (
+        <Alert variant="destructive">
+          <AlertTitle>Не удалось загрузить сводку</AlertTitle>
+          <AlertDescription>{getTicketErrorMessage("dashboard")}</AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }

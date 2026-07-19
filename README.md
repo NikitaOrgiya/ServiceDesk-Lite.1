@@ -2,12 +2,15 @@
 
 Внутренняя система регистрации и обработки технических заявок сотрудников.
 
-> **Статус:** этап 3 — Supabase Auth и разграничение ролей. Настоящий вход,
-> выход, восстановление пароля и серверная проверка роли реализованы и
-> проверены модульно/smoke-тестами; реальный Supabase Auth E2E **не
-> запускался** — в этой среде разработки нет доступного development-проекта
-> Supabase (см. [«Реальный Supabase»](#реальный-supabase-в-этой-сессии)).
-> Подключение реестра заявок к базе — следующий этап. Подробности — в разделе
+> **Статус:** Этап 4 частично завершён: реализация готова, интеграционная
+> приёмка ожидает development Supabase. Кабинет сотрудника (dashboard,
+> список заявок, создание, карточка заявки с комментариями/историей, отмена
+> собственной заявки) полностью реализован поверх RPC/RLS этапа 2 и
+> Supabase Auth этапа 3, покрыт unit-тестами. В этой среде разработки
+> по-прежнему нет доступного development-проекта Supabase (см.
+> [«Реальный Supabase в этой сессии»](#реальный-supabase-в-этой-сессии)),
+> поэтому реальный Auth E2E и Employee E2E **не запускались** — это не
+> считается пройденным. Подробности — в разделе
 > [«Текущий статус проекта»](#текущий-статус-проекта) и в
 > [`docs/database.md`](./docs/database.md) / [`docs/security.md`](./docs/security.md).
 
@@ -60,8 +63,9 @@ ServiceDesk Lite — лёгкое внутреннее веб-приложени
 
 - **`src/app`** — маршруты Next.js App Router: публичные страницы, кабинет
   сотрудника (`/app/**`), администрирование (`/admin/**`).
-- **`src/features`** — доменная логика по фичам (`auth`, `tickets`): Zod-схемы,
-  формы, справочники.
+- **`src/features`** — доменная логика по фичам (`auth`, `tickets`):
+  Zod-схемы, серверные запросы, Server Actions, формы, справочники — см.
+  разбор `features/tickets` ниже.
 - **`src/components/ui`** — примитивы shadcn/ui.
 - **`src/components/layout`** — переиспользуемые элементы каркаса (header,
   sidebar, контейнер страницы).
@@ -87,20 +91,103 @@ ServiceDesk Lite — лёгкое внутреннее веб-приложени
     `require-employee`, `require-admin`, `redirect-by-role`;
   - `actions/` — Server Actions: `login`, `logout`,
     `request-password-reset`, `update-password`.
+- **`src/features/tickets`** — кабинет сотрудника, разложенный по назначению
+  файла, а не по странице:
+  - `schemas/` — Zod: `create-ticket` (создание), `list-query` (whitelisted
+    `q`/`status`/`sort`/`page`/`pageSize`), `comment`, `ticket-id` (UUID);
+  - `types/ticket.ts` — доменные типы (`TicketListItem`, `TicketDetail`,
+    `TicketCommentItem`, `TicketHistoryItem`, `EmployeeDashboardCounts`);
+  - `utils/` — чистые функции без обращения к Supabase: русские подписи
+    (`labels.ts`), форматирование дат, форматирование истории
+    (`history-format.ts`, никогда не печатает «сырой» UUID), безопасные
+    сообщения об ошибках (`error-messages.ts`, фиксированные строки,
+    независимые от текста ошибки Supabase), решение «можно ли отменить»
+    (`can-cancel-ticket.ts`), агрегация дашборда (`dashboard-counts.ts`);
+  - `queries/` — только `import "server-only"`, только серверный
+    Supabase-клиент с сессией пользователя (`get-employee-dashboard`,
+    `get-employee-tickets`, `get-employee-ticket`);
+  - `actions/` — Server Actions (`create-ticket`, `add-ticket-comment`,
+    `cancel-ticket`) — каждая вызывает `requireEmployee()`, повторно
+    валидирует вход через Zod и мутирует только через RPC;
+  - `components/` — презентационные React-компоненты (бейджи, таблица
+    заявок, фильтры, пагинация, форма создания, карточка заявки,
+    комментарии, история, кнопка отмены с диалогом подтверждения).
 - **`src/lib/env`** — Zod-валидация переменных окружения с разделением на
   публичные (`client.ts`) и серверные (`server.ts`).
 - **`src/lib/logger`** — структурированный серверный logger с санитизацией
   ошибок (никаких токенов, cookie или паролей в логах).
-- **`supabase/migrations`** — 11 последовательных SQL-миграций: enum,
+- **`supabase/migrations`** — 13 последовательных SQL-миграций: enum,
   таблицы, ограничения/индексы, автосоздание профиля, security-helpers,
   атомарная нумерация заявок, workflow заявок и история изменений,
-  RPC-мутации, RLS, табличные и функциональные GRANT. Подробности — в
-  [`docs/database.md`](./docs/database.md).
+  RPC-мутации, RLS, табличные и функциональные GRANT, безопасный admin
+  bootstrap (12), видимость профиля исполнителя/автора комментария на
+  собственной заявке через `can_view_profile()` (13, этап 4 — RLS-политика
+  `profiles` изначально не пускала сотрудника увидеть имя исполнителя своей
+  же заявки). Подробности — в [`docs/database.md`](./docs/database.md).
 - **`supabase/tests`** — `security_assertions.sql` (статический аудит
   RLS/GRANT/`search_path`) и `functional_checks.sql` (сквозные проверки
   нумерации, переходов статусов, истории, неизменяемых полей).
 
 ## Текущий статус проекта
+
+После этапа 4:
+
+- ✅ Кабинет сотрудника полностью реализован: dashboard с четырьмя реальными
+  счётчиками из одного запроса, список собственных заявок с поиском/
+  фильтром/сортировкой/пагинацией (валидируется Zod, безопасные значения по
+  умолчанию вместо ошибок SQL), создание заявки только через RPC
+  `create_ticket`, карточка заявки (данные+автор+исполнитель+комментарии+
+  история), комментарии только через `add_ticket_comment`, отмена только
+  через `cancel_own_ticket`.
+- ✅ Новая миграция `202607190013_profile_visibility_for_related_tickets.sql`
+  и `can_view_profile()` — сотрудник видит имя исполнителя/автора
+  комментария/актора истории только на **своей** заявке, RLS-политика
+  `profiles` заменена (миграции 001–012 не редактировались).
+- ✅ Существование чужой заявки не раскрывается: несуществующий и чужой id
+  дают одинаковый `notFound()` — RLS `tickets_select_own_or_admin` делает эти
+  два случая неразличимыми на уровне запроса, а не только в UI.
+- ✅ Отмена заявки: кнопка скрыта не для статуса `new`, но реальная защита —
+  проверка `author_id`+`status = 'new'` внутри `cancel_own_ticket` — на
+  сервере, а не в интерфейсе.
+- ✅ Все мутации — только через RPC (`create_ticket`, `add_ticket_comment`,
+  `cancel_own_ticket`), ни одного прямого `.insert()`/`.update()` на
+  `tickets`/`ticket_comments`.
+- ✅ Пользователю никогда не показывается текст SQL-ошибки, имя политики,
+  JWT/cookie или чужой UUID — фиксированные русские сообщения
+  (`utils/error-messages.ts`), сырые ошибки только в серверном логе после
+  санитизации (`sanitizeError`).
+- ✅ Новые события логирования: `tickets:dashboard_failed`,
+  `tickets:list_failed`, `tickets:create_failed`, `tickets:detail_failed`,
+  `tickets:comment_failed`, `tickets:history_failed`, `tickets:cancel_failed`
+  — без полного текста комментария/описания заявки.
+- ✅ 101 unit-тест (Vitest) покрывает Zod-схемы, whitelists (`sort`,
+  `pageSize`), лимит длины поиска, UUID-схему, форматирование статуса/
+  категории/приоритета/истории, агрегацию dashboard, решение об отмене,
+  безопасность сообщений об ошибках.
+- ⚠️ **Реальный Supabase Auth E2E и Employee E2E не запускались** — в этой
+  среде разработки по-прежнему нет доступного development-проекта Supabase
+  (см. [«Реальный Supabase в этой сессии»](#реальный-supabase-в-этой-сессии)).
+  `npm run test:e2e:employee` существует и самостоятельно помечает все
+  тесты skipped без credentials — это не считается «пройдено».
+- ⚠️ Реальные тестовые пользователи Employee/Admin не создавались, реальные
+  миграции 001–013 не применялись к development-проекту, RLS с настоящими
+  JWT двух разных сотрудников не проверялась — всё это заблокировано
+  отсутствием доступного Supabase, не пропущено произвольно.
+- ❌ TypeScript-типы базы (`src/types/database.ts`) — всё ещё честная
+  заглушка, генерация ждёт доступности реального/локального Supabase.
+- ❌ Администраторский интерфейс обработки заявок **намеренно не
+  реализован** в этом этапе — задача следующего этапа.
+
+Проверено локально (native PostgreSQL 16, без реального Supabase — см.
+[docs/database.md](./docs/database.md)): миграции 001–013 применяются с
+нуля без ошибок, `security_assertions.sql`/`functional_checks.sql`/
+`admin_bootstrap_checks.sql` проходят, а также отдельная проверка
+`can_view_profile()` (сотрудник видит исполнителя/комментатора **только**
+на своей заявке, не видит их на чужой, и наоборот — исполнитель не видит
+автора только по факту назначения).
+
+<details>
+<summary>История: статус после этапа 3</summary>
 
 После этапа 3:
 
@@ -137,6 +224,8 @@ ServiceDesk Lite — лёгкое внутреннее веб-приложени
 полностью готовы и защищены, но список/создание заявок в интерфейсе ещё не
 подключены к базе.
 
+</details>
+
 ## Локальный запуск
 
 ```bash
@@ -154,8 +243,31 @@ supabase start                # поднимает Postgres/Auth/PostgREST/Studi
 supabase db reset              # применяет все миграции + supabase/seed.sql с нуля
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/security_assertions.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/functional_checks.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/admin_bootstrap_checks.sql
 supabase gen types typescript --local > src/types/database.ts
 ```
+
+### Подключение отдельного development-проекта Supabase
+
+Никогда не используйте production-проект для разработки/тестов. Чтобы
+подключить отдельный dev-проект (это не было выполнено в данной сессии —
+см. [«Реальный Supabase в этой сессии»](#реальный-supabase-в-этой-сессии)):
+
+```bash
+supabase login                          # интерактивная авторизация CLI
+supabase link --project-ref <dev-ref>   # связать репозиторий с dev-проектом, НЕ с production
+supabase db push                        # применить supabase/migrations/*.sql к dev-базе
+supabase gen types typescript --linked > src/types/database.ts
+```
+
+`supabase db push` только добавляет ещё не применённые миграции по
+порядку файлов — он не трогает существующие данные и не аналогичен
+`supabase db reset` (который есть смысл гонять только локально). Тестовых
+пользователей Employee/Admin создавайте только через Dashboard →
+Authentication → Users или доверенный не-HTTP скрипт (см.
+[«Создание тестовых пользователей»](#создание-тестовых-пользователей)) —
+специальный HTTP-роут вида `/api/create-user` в этом проекте не
+предусмотрен и не должен появляться.
 
 Подробности, включая точную схему, RPC, модель RLS/GRANT и честную оговорку
 о том, что было реально проверено локально в среде разработки — в
@@ -210,7 +322,7 @@ Proxy (замена устаревшего `middleware.ts` в Next.js 16) на �
 | Раздел | Пути | Защита |
 | --- | --- | --- |
 | Публичные | `/`, `/login`, `/forgot-password`, `/auth/callback`, `/reset-password`, `/unauthorized` | нет |
-| Сотрудник | `/app`, `/app/tickets`, `/app/tickets/new` | `requireEmployee()` в `src/app/app/layout.tsx` |
+| Сотрудник | `/app`, `/app/tickets`, `/app/tickets/new`, `/app/tickets/[id]` | `requireEmployee()` в `src/app/app/layout.tsx` |
 | Администратор | `/admin`, `/admin/tickets` | `requireAdmin()` в `src/app/admin/layout.tsx` |
 
 Активный авторизованный пользователь, открывший `/login`, перенаправляется
@@ -298,11 +410,12 @@ Supabase Dashboard → Authentication → SMTP Settings.
 Без этого `resetPasswordForEmail`/`exchangeCodeForSession` будут отклонены
 Supabase.
 
-### Локальные Auth E2E
+### Локальные E2E
 
 ```bash
-npm run test:e2e         # всегда: /login, /forgot-password, protected-redirect, open-redirect
-npm run test:e2e:auth    # только при наличии реальных credentials, см. ниже
+npm run test:e2e           # всегда: /login, /forgot-password, protected-redirect, open-redirect
+npm run test:e2e:auth      # реальный Supabase Auth — только с credentials, см. ниже
+npm run test:e2e:employee  # реальный workflow кабинета сотрудника — только с credentials
 ```
 
 `test:e2e:auth` (`e2e/auth.spec.ts`) требует четырёх переменных окружения
@@ -315,9 +428,16 @@ E2E_ADMIN_EMAIL
 E2E_ADMIN_PASSWORD
 ```
 
-Если хотя бы одна отсутствует, каждый тест в файле явно помечается
-**skipped** (не passed) с понятной причиной — так и должно быть, если
-development-проект Supabase недоступен.
+`test:e2e:employee` (`e2e/employee.spec.ts`) требует только пару
+`E2E_EMPLOYEE_EMAIL`/`E2E_EMPLOYEE_PASSWORD` и проверяет создание заявки,
+поиск в списке, комментарий и отмену собственной новой заявки. Каждая
+созданная им заявка называется с префиксом `E2E:` — чтобы её потом было
+легко найти и удалить вручную; сам тест никогда не очищает базу и не
+меняет роль Admin-аккаунта.
+
+Если хотя бы одна из нужных переменных отсутствует, каждый тест в
+соответствующем файле явно помечается **skipped** (не passed) с понятной
+причиной — так и должно быть, если development-проект Supabase недоступен.
 
 ### Политика demo/test credentials
 
@@ -330,22 +450,100 @@ development-проект Supabase недоступен.
 
 ### Реальный Supabase в этой сессии
 
-В этой среде разработки нет заполненных `NEXT_PUBLIC_SUPABASE_URL`/
-`NEXT_PUBLIC_SUPABASE_ANON_KEY`/`SUPABASE_SERVICE_ROLE_KEY` и нет
-работающего Docker (см. `docs/database.md`), поэтому:
+В этой среде разработки (этапы 2–4) по-прежнему нет заполненных
+`NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY`/
+`SUPABASE_SERVICE_ROLE_KEY`, нет сохранённого `supabase login`-токена
+(`npx supabase projects list` возвращает `LegacyPlatformAuthRequiredError`)
+и нет работающего Docker (см. `docs/database.md`), поэтому на этапе 4:
 
-- реальные пользователи не создавались;
-- удалённые миграции не применялись (только к локальному PostgreSQL-стенду,
-  как на этапе 2);
-- `npm run test:e2e:auth` не запускался «по-настоящему» — только
-  подтверждено, что при отсутствии credentials все 9 тестов корректно
-  помечаются skipped;
-- GoTrue/PostgREST с реальными пользовательскими JWT не проверялись.
+- **Проверено** (без реального Supabase, на native PostgreSQL 16 +
+  самодельная заглушка схемы `auth`, как на этапах 2–3): миграции 001–013
+  применяются с нуля без ошибок; `security_assertions.sql`,
+  `functional_checks.sql`, `admin_bootstrap_checks.sql` проходят; отдельная
+  ad hoc проверка `can_view_profile()` подтверждает, что сотрудник видит
+  исполнителя/комментатора только на своей заявке и не видит их на чужой;
+  `npm run lint`/`typecheck`/`test`/`build` проходят; `npm run test:e2e`
+  проходит (общие smoke-проверки); при отсутствии credentials
+  `test:e2e:auth` и `test:e2e:employee` корректно помечают все тесты
+  skipped, а не failed.
+- **Не проверено на настоящем Supabase**: реальный development-проект не
+  подключался; реальные тестовые пользователи Employee/Admin не
+  создавались; миграции не применялись через `supabase db push`/Dashboard
+  к удалённой базе; `npm run test:e2e:auth` и `npm run test:e2e:employee`
+  не запускались «по-настоящему» (только подтверждено корректное
+  поведение skip); GoTrue/PostgREST с реальными пользовательскими JWT двух
+  разных сотрудников (Employee A/B) не проверялись; `supabase gen types
+  typescript --linked` не запускался, `src/types/database.ts` остаётся
+  честной заглушкой.
 
-Всё остальное — код, RLS/GRANT-модель, unit-тесты, statики SQL-проверки —
-реализовано и проверено. Не утверждается, что реальная авторизация
-работает «в проде» — только то, что она реализована по спецификации
-Supabase Auth и проверена всем, что можно проверить без реального проекта.
+Всё остальное — код, RLS/GRANT-модель, unit-тесты, статические
+SQL-проверки — реализовано и проверено всем, чем можно проверить без
+реального проекта. Не утверждается, что кабинет сотрудника работает «в
+проде» — только то, что он реализован по спецификации и покрыт всем, что
+можно покрыть без реального Supabase.
+
+## Кабинет сотрудника
+
+Реализован полностью поверх RPC/RLS этапа 2 и Supabase Auth этапа 3.
+Административный интерфейс обработки заявок в этот этап намеренно не
+входит.
+
+### Dashboard (`/app`)
+
+Четыре счётчика (Открытые = `new`+`accepted`, В работе = `in_progress`,
+Ожидающие = `waiting`, Завершённые = `resolved`+`closed`+`cancelled`) —
+из **одного** запроса `select("status")`, агрегация — чистая функция
+`bucketDashboardCounts()`, покрыта unit-тестами отдельно от Supabase.
+
+### Список заявок (`/app/tickets`)
+
+- Колонки: номер, тема, категория, приоритет, статус, дата создания,
+  исполнитель; адаптивно — таблица на `sm+`, карточки на мобильных.
+- Поиск (`q`, по `public_number`/`title`, регистронезависимо, до 120
+  символов), фильтр по статусу, сортировка (`newest`/`oldest`), пагинация
+  (`pageSize` из `{10, 20, 50}`, по умолчанию 10) — всё через
+  `ticketListQuerySchema` (Zod), каждое поле имеет безопасное значение по
+  умолчанию (`.catch(...)`) вместо ошибки при некорректном `?sort=`/
+  `?pageSize=`/`?page=` в URL. `sort` и `pageSize` — закрытые перечисления,
+  так что из URL никогда не попадает произвольное имя столбца.
+- Поиск использует `.or()` query builder'а Supabase, а не ручную
+  конкатенацию SQL-строк; значение экранируется от мета-символов
+  PostgREST (`,`, `(`, `)`, `"`), а не только от SQL-инъекции.
+- Имя исполнителя получено одним embedded-запросом
+  (`profiles!tickets_assignee_id_fkey`) — не по одному запросу на строку.
+
+### Создание заявки (`/app/tickets/new`)
+
+Server Action (`actions/create-ticket.ts`) вызывает `requireEmployee()`,
+заново валидирует `FormData` через `createTicketSchema` (Zod) и создаёт
+заявку **только** через RPC `create_ticket` — никогда не принимает
+`author_id`/`public_number`/`status`/`assignee_id`/`created_at` от клиента
+(этих полей физически нет в схеме). После успеха — `revalidatePath` и
+redirect на `/app/tickets/[id]`.
+
+### Карточка заявки (`/app/tickets/[id]`)
+
+- `id` валидируется как UUID (Zod) до похода в базу.
+- Один запрос на саму заявку (с именами автора/исполнителя через embed) +
+  отдельный запрос на комментарии + отдельный на историю — это не N+1
+  (недопустим только embed на **каждую строку списка**, отдельные запросы
+  на связанные коллекции одной заявки — предусмотренный вариант).
+- Несуществующая заявка и чужая заявка дают одинаковый `notFound()` —
+  RLS `tickets_select_own_or_admin` делает эти случаи неразличимыми уже на
+  уровне запроса, странице неоткуда узнать разницу.
+- Комментарии — только через RPC `add_ticket_comment` (1–3000 символов,
+  обрезка пробелов), хронологический порядок, автор+роль+дата+текст.
+- История — из `ticket_history`, тот же хронологический порядок, русские
+  описания событий (`utils/history-format.ts`), «Системное действие» для
+  отсутствующего актора, никогда не отображает «сырой» UUID
+  (`assignee_changed` резолвится в имя одним batch-запросом к `profiles`,
+  а не по одному запросу на историческую запись).
+- Текст комментария/события истории всегда выводится как обычный текст
+  JSX (React экранирует по умолчанию) — никогда через
+  `dangerouslySetInnerHTML`.
+- Отмена — только через RPC `cancel_own_ticket`, кнопка показана только
+  при `status = 'new'`, но реальная защита (владелец + статус) — внутри
+  самой RPC-функции; диалог подтверждения обязателен перед вызовом.
 
 ## Переменные окружения
 
@@ -371,8 +569,9 @@ npm run typecheck     # tsc --noEmit
 npm run test          # unit-тесты (Vitest)
 npm run test:watch    # unit-тесты в watch-режиме
 npm run build         # production-сборка Next.js
-npm run test:e2e      # smoke-тесты Playwright, всегда выполняются
-npm run test:e2e:auth # реальные Auth E2E — только с E2E_* credentials, иначе skipped
+npm run test:e2e           # smoke-тесты Playwright, всегда выполняются
+npm run test:e2e:auth      # реальные Auth E2E — только с E2E_* credentials, иначе skipped
+npm run test:e2e:employee  # реальный workflow кабинета сотрудника — только с credentials, иначе skipped
 ```
 
 Проверки SQL-схемы (требуют локального Supabase/Postgres — см. выше):
@@ -398,14 +597,21 @@ src/
 │   ├── admin/             # администрирование (layout + requireAdmin)
 │   └── unauthorized/
 ├── components/
-│   ├── layout/            # header (реальный профиль+logout), sidebar
-│   └── ui/                 # примитивы shadcn/ui
+│   ├── layout/            # header (реальный профиль+logout), sidebar, breadcrumb
+│   └── ui/                 # примитивы shadcn/ui (+ dialog.tsx, этап 4)
 ├── config/                # site.ts, navigation.ts
 ├── features/
 │   ├── auth/              # schema, redirect, access-decision, roles,
 │   │   ├── server/        #   server/ (identity+role, server-only),
 │   │   └── actions/       #   actions/ (Server Actions: login/logout/…)
-│   └── tickets/           # схема заявки, справочники, форма, stat-card
+│   └── tickets/           # кабинет сотрудника (этап 4)
+│       ├── schemas/       #   create-ticket, list-query, comment, ticket-id (Zod)
+│       ├── types/         #   доменные типы (ticket.ts)
+│       ├── utils/         #   labels, форматирование дат/истории, error-messages,
+│       │                  #   can-cancel-ticket, dashboard-counts — без Supabase
+│       ├── queries/       #   server-only, серверная сессия, никогда admin-клиент
+│       ├── actions/       #   Server Actions: create/comment/cancel — RPC-only
+│       └── components/    #   бейджи, таблица, фильтры, пагинация, формы, история
 ├── lib/
 │   ├── env/               # Zod-валидация env (client/server)
 │   ├── logger/            # серверный logger + санитизация ошибок
@@ -415,10 +621,11 @@ src/
 └── test/setup.ts          # настройка Vitest
 e2e/
 ├── smoke.spec.ts           # всегда выполняется
-└── auth.spec.ts            # реальный Supabase Auth — skip без credentials
+├── auth.spec.ts            # реальный Supabase Auth — skip без credentials
+└── employee.spec.ts        # реальный workflow кабинета сотрудника — skip без credentials
 supabase/
 ├── config.toml
-├── migrations/            # 12 последовательных SQL-миграций (см. docs/database.md)
+├── migrations/            # 13 последовательных SQL-миграций (см. docs/database.md)
 ├── scripts/make_admin.sql # owner-only назначение admin (плейсхолдер email)
 ├── seed.sql               # идемпотентный, без production-учётных записей
 └── tests/
@@ -438,13 +645,18 @@ docs/
   RPC `create_ticket`/`add_ticket_comment`/`cancel_own_ticket`/
   `admin_set_ticket_*`, атомарный генератор номера заявки, централизованные
   переходы статусов, автоматическая история изменений.
-- **Этап 3 (текущий):** авторизация Supabase Auth, cookie-based SSR-сессия,
+- **Этап 3:** авторизация Supabase Auth, cookie-based SSR-сессия,
   Proxy, серверная повторная проверка роли, безопасный admin bootstrap,
   восстановление пароля, реальные вход/выход/профиль в интерфейсе.
-- **Этап 4:** кабинет сотрудника — dashboard, список собственных заявок,
+- **Этап 4 (текущий, частично завершён):** кабинет сотрудника — dashboard,
+  список собственных заявок с поиском/фильтром/сортировкой/пагинацией,
   создание заявки через `create_ticket`, карточка заявки, комментарии,
-  история, отмена заявки.
-- **Далее:** административный реестр с реальными данными, экспорт,
+  история, отмена заявки. Реализация готова и покрыта unit-тестами;
+  интеграционная приёмка на настоящем Supabase (реальные тестовые
+  пользователи, реальный Auth/Employee E2E, RLS с реальными JWT) ожидает
+  доступности development-проекта.
+- **Далее:** административный интерфейс обработки заявок (намеренно не
+  реализован в этапе 4), реальные данные для admin dashboard, экспорт,
   уведомления и другие возможности — по мере необходимости.
 
 ## Безопасность
@@ -477,16 +689,37 @@ docs/
 - Safe-redirect (`?next=`) — allow-list, не deny-list; роль имеет
   приоритет над запрошенным путём. Юнит-тесты покрывают внешние URL,
   protocol-relative URL и `javascript:`/`data:`.
+- Все мутации заявок — только через `SECURITY DEFINER` RPC
+  (`create_ticket`/`add_ticket_comment`/`cancel_own_ticket`), ни одного
+  прямого `.insert()`/`.update()` из интерфейса; RPC сами проверяют
+  владельца и статус — скрытие кнопки «Отменить» в UI не единственная
+  защита.
+- Существование чужой заявки не раскрывается: `/app/tickets/[id]`
+  возвращает одинаковый `notFound()` для несуществующего id и для чужой
+  заявки — RLS делает эти случаи неразличимыми на уровне запроса.
+- Поиск в списке заявок использует query builder Supabase (`.or()`), а не
+  ручную конкатенацию SQL; `sort`/`pageSize` — закрытые Zod-перечисления,
+  поэтому из URL не может попасть произвольное имя столбца или объём
+  выборки.
+- Пользователю никогда не показывается текст SQL-ошибки/имя политики/
+  JWT/cookie/чужой UUID — фиксированные русские сообщения об ошибках,
+  независимые от `sanitizeError()`, которая используется только для
+  сервера логирования.
+- Миграция `202607190013_...sql` добавляет `can_view_profile()` вместо
+  редактирования уже применённой миграции 09 — исправления схемы всегда
+  идут новой миграцией, а не правкой истории.
 
 ## Ограничения MVP
 
 Намеренно не реализовано на этом этапе (появится позже):
 
-- загрузка/создание реальных заявок через интерфейс, комментарии, история
-  и смена статуса в UI — схема готова (этап 2), но UI к ней не подключён;
-- административный dashboard с реальными SQL-запросами, CSV-экспорт;
+- административный интерфейс обработки заявок (реестр, взятие в работу,
+  смена статуса/приоритета/исполнителя админом) — намеренно исключён из
+  этапа 4, RPC для этого уже есть (`admin_set_ticket_*`, этап 2);
+  административный dashboard по-прежнему показывает статичные нули;
 - вложения, email-уведомления сверх встроенного password recovery
-  Supabase, realtime-обновления;
+  Supabase, realtime-обновления, drag-and-drop, сложные анимации,
+  BI-графики, тёмная тема — не входят в MVP по требованиям;
 - OAuth, magic link, SSO — только email/password;
 - роль исполнителя как отдельная сущность (исполнитель — это активный
   профиль employee/admin, см. `docs/database.md`);

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Send } from "lucide-react";
+import { AlertCircle, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,8 +17,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
-import { createTicketSchema, type CreateTicketInput } from "@/features/tickets/schema";
-import { categoryOptions, priorityOptions } from "@/features/tickets/labels";
+import { createTicketSchema, type CreateTicketInput } from "@/features/tickets/schemas/create-ticket";
+import { categoryOptions, priorityOptions } from "@/features/tickets/utils/labels";
+import { createTicketAction } from "@/features/tickets/actions/create-ticket";
 
 const fieldClassName = cn(
   "border-input flex h-9 w-full rounded-md border bg-transparent px-3 py-1 text-base shadow-xs outline-none",
@@ -26,20 +27,34 @@ const fieldClassName = cn(
 );
 
 export function NewTicketForm() {
-  const [submitted, setSubmitted] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
   const form = useForm<CreateTicketInput>({
     resolver: zodResolver(createTicketSchema),
     defaultValues: {
       title: "",
       description: "",
+      priority: "normal",
     },
   });
 
-  function onSubmit() {
-    // TODO(stage-2): call the `create_ticket` RPC once the Supabase schema
-    // and RLS policies exist. The form only validates locally for now.
-    setSubmitted(true);
+  function onSubmit(values: CreateTicketInput) {
+    setFormError(null);
+    startTransition(async () => {
+      const formData = new FormData();
+      formData.set("title", values.title);
+      formData.set("description", values.description);
+      formData.set("category", values.category);
+      formData.set("priority", values.priority);
+
+      // On success createTicketAction redirects server-side and this
+      // promise never resolves with a value — it only returns on failure.
+      const result = await createTicketAction(formData);
+      if (result?.error) {
+        setFormError(result.error);
+      }
+    });
   }
 
   return (
@@ -49,13 +64,11 @@ export function NewTicketForm() {
         className="flex flex-col gap-5"
         noValidate
       >
-        {submitted ? (
-          <Alert>
-            <AlertTitle>Отправка пока недоступна</AlertTitle>
-            <AlertDescription>
-              Форма прошла проверку, но сохранение заявок появится на
-              следующем этапе разработки.
-            </AlertDescription>
+        {formError ? (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertTitle>Не удалось создать заявку</AlertTitle>
+            <AlertDescription>{formError}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -66,7 +79,7 @@ export function NewTicketForm() {
             <FormItem>
               <FormLabel>Тема</FormLabel>
               <FormControl>
-                <Input placeholder="Коротко опишите проблему" {...field} />
+                <Input placeholder="Коротко опишите проблему" disabled={isPending} {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -84,6 +97,7 @@ export function NewTicketForm() {
                   rows={5}
                   placeholder="Подробно опишите проблему: когда она возникла и что уже пробовали"
                   className={cn(fieldClassName, "h-auto resize-y py-2")}
+                  disabled={isPending}
                   {...field}
                 />
               </FormControl>
@@ -107,6 +121,7 @@ export function NewTicketForm() {
                     value={field.value ?? ""}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
+                    disabled={isPending}
                   >
                     <option value="" disabled>
                       Выберите категорию
@@ -137,6 +152,7 @@ export function NewTicketForm() {
                     value={field.value ?? ""}
                     onChange={field.onChange}
                     onBlur={field.onBlur}
+                    disabled={isPending}
                   >
                     <option value="" disabled>
                       Выберите приоритет
@@ -154,9 +170,9 @@ export function NewTicketForm() {
           />
         </div>
 
-        <Button type="submit" className="sm:w-fit">
+        <Button type="submit" className="sm:w-fit" disabled={isPending}>
           <Send />
-          Создать заявку
+          {isPending ? "Отправка…" : "Создать заявку"}
         </Button>
       </form>
     </Form>

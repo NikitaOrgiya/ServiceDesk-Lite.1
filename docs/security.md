@@ -20,8 +20,8 @@ anything.
 
 | Object | Operation | `anon` | `employee` | `admin` | `service_role` | Enforcement |
 | --- | --- | --- | --- | --- | --- | --- |
-| `profiles` | SELECT own row | ✗ | ✓ | ✓ | ✗ | RLS policy |
-| `profiles` | SELECT other rows | ✗ | ✗ | ✓ | ✗ | RLS policy (`is_admin()`) |
+| `profiles` | SELECT own row | ✗ | ✓ | ✓ | ✗ | RLS policy (`can_view_profile()`) |
+| `profiles` | SELECT other rows | ✗ | only if referenced as assignee/comment-or-history-actor on a ticket the caller authored | ✓ | ✗ | RLS policy (`can_view_profile()`, stage 4 migration 013) |
 | `profiles` | INSERT | ✗ | ✗ | ✗ | ✗ | No policy/grant — only `handle_new_user()` trigger |
 | `profiles` | UPDATE `role`/`is_active` | ✗ | ✗ | ✗ | ✗ | No policy/grant for any Data-API role; only `private.set_profile_role()`, unreachable from the Data API — see [Admin bootstrap](#admin-bootstrap) |
 | `tickets` | SELECT own | ✗ | ✓ | ✓ | ✗ | RLS policy |
@@ -45,7 +45,8 @@ anything.
 - [x] `service_role` has zero table privileges (no standing access it
       doesn't use yet).
 - [x] Every client-facing table has exactly one policy, and it is
-      `SELECT`-only.
+      `SELECT`-only (the `profiles` policy was replaced, not duplicated, by
+      migration 013 — still exactly one).
 - [x] `PUBLIC` and `anon` have `EXECUTE` on no function in `public`.
 - [x] `authenticated` has `EXECUTE` on exactly the RPC/helper allow-list —
       nothing else (covers `generate_ticket_number()` and every trigger

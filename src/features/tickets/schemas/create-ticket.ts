@@ -17,8 +17,8 @@ export type TicketPriority = (typeof TICKET_PRIORITIES)[number];
 /**
  * Client-submittable fields for a new ticket. Deliberately excludes any
  * server-assigned value (author, ticket number, status, assignee, timestamps)
- * — those come from the trusted server context in a later stage, never from
- * the browser.
+ * — those come only from the server (`requireEmployee()` + the
+ * `create_ticket` RPC), never from the browser.
  */
 export const createTicketSchema = z.object({
   title: z

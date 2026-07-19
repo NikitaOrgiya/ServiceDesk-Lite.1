@@ -88,3 +88,45 @@ jobs:
 
       - name: Real Supabase Auth E2E
         run: npm run test:e2e:auth
+
+  # Same gating as auth-e2e — this suite additionally exercises the
+  # employee ticket cabinet (create/list/comment/cancel) end to end. All
+  # ticket data it creates is prefixed `E2E:`; it never resets the database
+  # and never changes the Admin account's role.
+  employee-e2e:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: >
+      secrets.E2E_SUPABASE_URL != '' &&
+      secrets.E2E_SUPABASE_ANON_KEY != '' &&
+      secrets.E2E_EMPLOYEE_EMAIL != '' &&
+      secrets.E2E_EMPLOYEE_PASSWORD != ''
+
+    env:
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      E2E_EMPLOYEE_EMAIL: ${{ secrets.E2E_EMPLOYEE_EMAIL }}
+      E2E_EMPLOYEE_PASSWORD: ${{ secrets.E2E_EMPLOYEE_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build
+        run: npm run build
+
+      - name: Real Supabase employee ticket workflow E2E
+        run: npm run test:e2e:employee
