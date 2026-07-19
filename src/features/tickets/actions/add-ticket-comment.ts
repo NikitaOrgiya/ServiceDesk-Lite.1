@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createClient } from "@/lib/supabase/server";
+import { createDataApiClient } from "@/lib/neon/data-api";
 import { requireEmployee } from "@/features/auth/server/require-employee";
 import { addCommentSchema } from "@/features/tickets/schemas/comment";
 import { ticketIdSchema } from "@/features/tickets/schemas/ticket-id";
@@ -35,8 +35,8 @@ export async function addTicketCommentAction(
     return { error: parsed.error.issues[0]?.message ?? getTicketErrorMessage("comment") };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("add_ticket_comment", {
+  const client = createDataApiClient();
+  const { error } = await client.rpc("add_ticket_comment", {
     p_ticket_id: idResult.data,
     p_message: parsed.data.message,
   });

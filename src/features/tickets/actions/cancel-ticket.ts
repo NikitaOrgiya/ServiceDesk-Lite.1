@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createClient } from "@/lib/supabase/server";
+import { createDataApiClient } from "@/lib/neon/data-api";
 import { requireEmployee } from "@/features/auth/server/require-employee";
 import { ticketIdSchema } from "@/features/tickets/schemas/ticket-id";
 import { getTicketErrorMessage } from "@/features/tickets/utils/error-messages";
@@ -15,10 +15,11 @@ export type CancelTicketActionResult = {
 
 /**
  * Cancels the caller's own ticket exclusively through
- * `public.cancel_own_ticket`. Hiding the cancel button once status is no
- * longer 'new' is only a UX nicety on the client — the real protection is
- * the RPC's own `WHERE author_id = auth.uid() AND status = 'new'` check,
- * which this function relies on rather than duplicating client-side.
+ * `public.cancel_own_ticket` (called via the Neon Data API's RPC
+ * endpoint). Hiding the cancel button once status is no longer 'new' is
+ * only a UX nicety on the client — the real protection is the RPC's own
+ * `WHERE author_id = auth.user_id() AND status = 'new'` check, which this
+ * function relies on rather than duplicating client-side.
  */
 export async function cancelTicketAction(ticketId: string): Promise<CancelTicketActionResult> {
   const idResult = ticketIdSchema.safeParse(ticketId);
@@ -28,8 +29,8 @@ export async function cancelTicketAction(ticketId: string): Promise<CancelTicket
 
   await requireEmployee(`/app/tickets/${ticketId}`);
 
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("cancel_own_ticket", { p_ticket_id: idResult.data });
+  const client = createDataApiClient();
+  const { error } = await client.rpc("cancel_own_ticket", { p_ticket_id: idResult.data });
 
   if (error) {
     const sanitized = sanitizeError(error);

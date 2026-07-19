@@ -1,9 +1,9 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
+import { createDataApiClient } from "@/lib/neon/data-api";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
-import { toSingleEmbed } from "@/features/tickets/utils/supabase-embed";
+import { toSingleEmbed } from "@/features/tickets/utils/postgrest-embed";
 import type { TicketCategory, TicketPriority } from "@/features/tickets/schemas/create-ticket";
 import type {
   TicketCommentItem,
@@ -18,8 +18,6 @@ export type TicketDetailResult = {
   history: TicketHistoryItem[];
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Loads one ticket the caller can access, plus its comments and history.
  * The main ticket row (with author/assignee names embedded) is one query;
@@ -33,14 +31,14 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * (see docs/security.md: never reveal another user's ticket exists).
  */
 export async function getEmployeeTicketDetail(ticketId: string): Promise<TicketDetailResult | null> {
-  const supabase = await createClient();
+  const client = createDataApiClient();
 
-  const { data: ticketRow, error: ticketError } = await supabase
+  const { data: ticketRow, error: ticketError } = await client
     .from("tickets")
     .select(
       `id, public_number, title, description, category, priority, status, due_at, resolved_at, created_at, updated_at,
-       author:profiles!tickets_author_id_fkey(full_name),
-       assignee:profiles!tickets_assignee_id_fkey(full_name)`
+       author:profiles!tickets_author_id_profiles_id_fk(full_name),
+       assignee:profiles!tickets_assignee_id_profiles_id_fk(full_name)`
     )
     .eq("id", ticketId)
     .maybeSingle();
@@ -89,11 +87,13 @@ export async function getEmployeeTicketDetail(ticketId: string): Promise<TicketD
 }
 
 async function getTicketComments(ticketId: string): Promise<TicketCommentItem[]> {
-  const supabase = await createClient();
+  const client = createDataApiClient();
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("ticket_comments")
-    .select("id, message, created_at, author:profiles!ticket_comments_author_id_fkey(full_name, role)")
+    .select(
+      "id, message, created_at, author:profiles!ticket_comments_author_id_profiles_id_fk(full_name, role)"
+    )
     .eq("ticket_id", ticketId)
     .order("created_at", { ascending: true });
 
@@ -122,12 +122,12 @@ async function getTicketComments(ticketId: string): Promise<TicketCommentItem[]>
 }
 
 async function getTicketHistory(ticketId: string): Promise<TicketHistoryItem[]> {
-  const supabase = await createClient();
+  const client = createDataApiClient();
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("ticket_history")
     .select(
-      "id, event_type, field_name, old_value, new_value, created_at, actor:profiles!ticket_history_actor_id_fkey(full_name)"
+      "id, event_type, field_name, old_value, new_value, created_at, actor:profiles!ticket_history_actor_id_profiles_id_fk(full_name)"
     )
     .eq("ticket_id", ticketId)
     .order("created_at", { ascending: true });
@@ -144,14 +144,16 @@ async function getTicketHistory(ticketId: string): Promise<TicketHistoryItem[]> 
 
   const rows = data ?? [];
 
-  // assignee_changed stores raw UUIDs in old_value/new_value (they are
-  // plain TEXT columns, not FK columns PostgREST can embed) — resolve them
-  // to display names with one batch profiles lookup, not one per row.
+  // assignee_changed stores raw Neon Auth user ids in old_value/new_value
+  // (they are plain TEXT columns, not FK columns PostgREST can embed) —
+  // resolve them to display names with one batch profiles lookup, not one
+  // per row. Unlike the Supabase prototype, ids are not necessarily
+  // UUID-shaped, so any non-empty value is treated as a candidate id.
   const assigneeIds = new Set<string>();
   for (const row of rows) {
     if (row.field_name === "assignee_id") {
       for (const value of [row.old_value, row.new_value]) {
-        if (typeof value === "string" && UUID_PATTERN.test(value)) {
+        if (typeof value === "string" && value.length > 0) {
           assigneeIds.add(value);
         }
       }
@@ -160,7 +162,7 @@ async function getTicketHistory(ticketId: string): Promise<TicketHistoryItem[]> 
 
   let nameById = new Map<string, string>();
   if (assigneeIds.size > 0) {
-    const { data: profileRows, error: profileError } = await supabase
+    const { data: profileRows, error: profileError } = await client
       .from("profiles")
       .select("id, full_name")
       .in("id", Array.from(assigneeIds));
@@ -173,7 +175,7 @@ async function getTicketHistory(ticketId: string): Promise<TicketHistoryItem[]> 
         code: sanitized.code,
       });
       // Fall through with no resolved names — formatAssigneeValue() never
-      // prints a raw UUID, it only loses the display name in this case.
+      // prints a raw id, it only loses the display name in this case.
     } else {
       nameById = new Map((profileRows ?? []).map((p) => [p.id as string, p.full_name as string]));
     }
@@ -198,7 +200,7 @@ async function getTicketHistory(ticketId: string): Promise<TicketHistoryItem[]> 
   });
 }
 
-/** Never returns the raw UUID: a resolvable name, a safe fallback label for
+/** Never returns the raw id: a resolvable name, a safe fallback label for
  * an unresolvable-but-present id, or null when there was genuinely no id. */
 function resolveAssigneeDisplay(value: string | null, nameById: Map<string, string>): string | null {
   if (!value) {
