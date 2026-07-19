@@ -2,7 +2,17 @@
 
 Внутренняя система регистрации и обработки технических заявок сотрудников.
 
-> **Статус:** Этап 4 частично завершён: реализация готова, интеграционная
+> **ServiceDesk-Lite.1 — Neon-версия ServiceDesk Lite.** Этот репозиторий
+> продолжает разработку ServiceDesk Lite на стеке Neon (Neon Auth, Neon Data
+> API, PostgreSQL RLS, Drizzle ORM) вместо Supabase. Исходный
+> Supabase-прототип сохранён без изменений в отдельном репозитории
+> `nikitaorgiya/servicedesk-lite` (ветка `claude/servicedesk-lite-stage-1-hzf7vf`,
+> commit `67d09de`) и продолжает описываться разделами ниже до тех пор, пока
+> функциональная миграция не заменит их. План и статус миграции — в
+> [`docs/migration/supabase-to-neon.md`](./docs/migration/supabase-to-neon.md)
+> и [`docs/migration/neon-migration.md`](./docs/migration/neon-migration.md).
+
+> **Статус (Supabase-прототип, унаследованный текст):** Этап 4 частично завершён: реализация готова, интеграционная
 > приёмка ожидает development Supabase. Кабинет сотрудника (dashboard,
 > список заявок, создание, карточка заявки с комментариями/историей, отмена
 > собственной заявки) полностью реализован поверх RPC/RLS этапа 2 и
