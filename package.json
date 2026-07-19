@@ -16,7 +16,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:check": "drizzle-kit check",
-    "test:db": "tsx scripts/run-sql-tests.ts"
+    "test:db": "tsx scripts/run-sql-tests.ts",
+    "db:check-connection": "tsx scripts/check-neon-connection.ts",
+    "db:create-demo-users": "tsx scripts/create-demo-users.ts",
+    "db:make-admin": "tsx scripts/make-admin.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
@@ -52,6 +55,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^6.0.3",
     "dotenv": "^17.4.2",
     "drizzle-kit": "^0.31.10",
@@ -61,6 +65,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "ws": "^8.21.1"
   }
 }

@@ -48,8 +48,8 @@ export type SanitizedError = {
 };
 
 /**
- * Normalizes any thrown value (Supabase error, native Error, string, or
- * unknown) into a plain, log-safe shape. Never returns tokens, cookies,
+ * Normalizes any thrown value (PostgREST/Neon Auth error, native Error,
+ * string, or unknown) into a plain, log-safe shape. Never returns tokens, cookies,
  * passwords, or the raw original object — safe to hand to a user-facing
  * message or a log sink.
  */

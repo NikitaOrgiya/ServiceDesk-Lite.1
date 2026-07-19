@@ -1,10 +1,11 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Real Supabase Auth E2E — requires a genuine development Supabase project
- * plus two real test accounts (an employee and an admin). Never run
- * against production. Credentials come only from the local environment or
- * GitHub Secrets — see README.md — and are never hardcoded here.
+ * Real Neon Auth E2E — requires a genuine Neon development branch with
+ * Neon Auth/Data API enabled, plus two real test accounts (an employee and
+ * an admin). Never run against production. Credentials come only from the
+ * local environment or GitHub Secrets — see README.md — and are never
+ * hardcoded here.
  *
  * If any of the four required env vars is missing, every test below
  * reports as SKIPPED (not passed, not failed) with a clear reason — see
@@ -17,11 +18,12 @@ const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD;
 
 const HAS_CREDENTIALS = Boolean(EMPLOYEE_EMAIL && EMPLOYEE_PASSWORD && ADMIN_EMAIL && ADMIN_PASSWORD);
 
-test.describe("real Supabase Auth", () => {
+test.describe("real Neon Auth", () => {
   test.skip(
     !HAS_CREDENTIALS,
     "E2E_EMPLOYEE_EMAIL / E2E_EMPLOYEE_PASSWORD / E2E_ADMIN_EMAIL / E2E_ADMIN_PASSWORD are not all set — " +
-      "these tests require a real development Supabase project and real test accounts, see README.md."
+      "these tests require a real Neon development branch (Neon Auth + Data API enabled) and real test " +
+      "accounts, see README.md."
   );
 
   async function login(page: import("@playwright/test").Page, email: string, password: string) {

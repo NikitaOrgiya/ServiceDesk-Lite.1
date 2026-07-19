@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 
-// Mirrors the shape of @supabase/auth-js's AuthError without importing it
-// directly — it's a transitive dependency of @supabase/supabase-js, not
-// one we declare ourselves, and its public shape (extends Error, adds
-// `code`/`status`) is simple enough to stand in for here.
+// Mirrors the shape of Neon Auth's server API error
+// (NeonAuthServerApiError: message/status/statusText/code) without
+// importing @neondatabase/auth directly — its public shape (extends
+// Error, adds `code`/`status`) is simple enough to stand in for here.
 class FakeAuthError extends Error {
   code: string;
   status: number;
@@ -19,7 +19,7 @@ class FakeAuthError extends Error {
 }
 
 describe("sanitizeError", () => {
-  it("extracts message/code/details/hint from a Supabase-like error", () => {
+  it("extracts message/code/details/hint from a PostgREST-like error", () => {
     const result = sanitizeError({
       message: "Row not found",
       code: "PGRST116",
@@ -69,9 +69,9 @@ describe("sanitizeError", () => {
 
   it("redacts a bearer authorization value", () => {
     const result = sanitizeError({
-      message: "Authorization: Bearer sb-abc.def.ghi rejected",
+      message: "Authorization: Bearer neon-abc.def.ghi rejected",
     });
-    expect(result.message).not.toContain("sb-abc.def.ghi");
+    expect(result.message).not.toContain("neon-abc.def.ghi");
   });
 
   it("never returns non-string fields from the original object", () => {
@@ -84,13 +84,13 @@ describe("sanitizeError", () => {
     expect(result.details).toBeUndefined();
   });
 
-  it("extracts message/code from a Supabase AuthError-shaped error", () => {
+  it("extracts message/code from a Neon Auth error-shaped error", () => {
     const result = sanitizeError(new FakeAuthError("Invalid login credentials", 400, "invalid_credentials"));
     expect(result.message).toBe("Invalid login credentials");
     expect(result.code).toBe("invalid_credentials");
   });
 
-  it("never leaks the internal Supabase error object, only the sanitized fields", () => {
+  it("never leaks the internal Neon Auth error object, only the sanitized fields", () => {
     const original = new FakeAuthError(
       "Invalid Refresh Token: access_token=abc123.def456.ghi789 rejected",
       401,
