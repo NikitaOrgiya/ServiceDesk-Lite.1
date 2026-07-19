@@ -46,11 +46,14 @@ active profile (`employee` or `admin`) — see `admin_set_ticket_assignee`.
 | 09 | `rls_policies` | `ENABLE ROW LEVEL SECURITY` + policies on all 5 tables |
 | 10 | `table_grants` | `REVOKE ALL` then minimal `GRANT SELECT` |
 | 11 | `function_grants_and_hardening` | `REVOKE`/`GRANT EXECUTE` for every function + an automated `search_path` audit |
+| 12 | `admin_bootstrap_hardening` | `private` schema + `private.set_profile_role()`, updates `guard_profile_mutation()` (stage 3) |
 
 Once committed, a migration is never edited again — fixes are new
 migrations. Note: `is_admin()` was needed one migration earlier than
 originally planned (04) to back a profile-mutation guard, so that guard
 trigger lives in migration 05 instead, right after `is_admin()` is defined.
+Migration 12 (stage 3) follows the same rule: it does not edit migration 05,
+it replaces `guard_profile_mutation()` via `CREATE OR REPLACE` in a new file.
 
 ## RPCs
 
@@ -133,21 +136,31 @@ even a privileged direct `UPDATE` is rejected. Verified in
 
 ### Admin bootstrap (assigning the first admin)
 
-No RPC in this stage can promote a profile to `admin` — that is
-intentional (see stage-3 plan). `guard_profile_mutation()` blocks *any*
-change to `role`/`is_active` unless the actor is already an active admin,
-which means even a direct `UPDATE` run as the `postgres` role is blocked by
-the trigger (triggers fire regardless of role). To assign the very first
-admin from a trusted, direct database session:
+> **Superseded.** This originally described a `SET session_replication_role
+> = replica` procedure. That is no longer the process — see
+> [`202607190012_admin_bootstrap_hardening.sql`](../supabase/migrations/202607190012_admin_bootstrap_hardening.sql)
+> and [`docs/security.md`](./security.md#admin-bootstrap), added in stage 3.
+> It required disabling trigger firing for the session, which stage 3
+> replaces with a mechanism that doesn't disable anything.
 
-```sql
-SET session_replication_role = replica; -- disables trigger firing for this session
-UPDATE public.profiles SET role = 'admin' WHERE id = '<uuid-of-user>';
-SET session_replication_role = origin;
+No RPC reachable through the Data API can promote a profile to `admin` —
+that remains true. Instead, a `private` schema (no `USAGE` for
+`PUBLIC`/`anon`/`authenticated`/`service_role`) holds
+`private.set_profile_role(user_id, role)`, and
+`guard_profile_mutation()` was updated (via `CREATE OR REPLACE`, in the new
+migration — the original migration 05 file was not edited) to also allow a
+role/is_active change when the call carries no `request.jwt.claims` GUC at
+all, i.e. it did not come through PostgREST. Assign the first admin with:
+
+```bash
+psql "$DATABASE_URL" -v target_email="'demo.admin@example.com'" \
+  -f supabase/scripts/make_admin.sql
 ```
 
-This is a deliberate, manual, privileged operation — never done through
-`raw_user_meta_data`/`app_metadata`, and never through the app.
+This is still a deliberate, manual, privileged operation — never done
+through `raw_user_meta_data`/`app_metadata`, and never through the app. See
+`docs/security.md` for the full mechanism and why it's closed to
+`anon`/`authenticated`/`service_role`.
 
 ## RLS model
 
@@ -277,38 +290,44 @@ proxy) — only the registry API hosts themselves are reachable, not the
 actual image layers. This is an environment limitation, not a schema
 problem.
 
-Every migration, `seed.sql`, `security_assertions.sql`, and
-`functional_checks.sql` in this repository **was** verified end-to-end
+Every migration (now including migration 12), `seed.sql`,
+`security_assertions.sql`, `functional_checks.sql`, and
+`admin_bootstrap_checks.sql` in this repository **was** verified end-to-end
 against a real PostgreSQL 16 server (installed natively in the sandbox, no
 Docker) with a minimal hand-built stand-in for the parts of Supabase's
 `auth` schema the migrations reference (`auth.users`, `auth.uid()`) and the
 `anon`/`authenticated`/`service_role` roles — applied to a freshly created
-database, from empty, twice, both times cleanly. TypeScript type generation
+database, from empty, repeatedly, always cleanly. TypeScript type generation
 (`supabase gen types typescript --local`) does require the Docker-based
-stack and could not be run — `src/types/database.ts` remains the stage-1
-placeholder pending a stage where the local stack is reachable.
+stack (or a linked real project) and could not be run — `src/types/database.ts`
+remains the stage-1 placeholder pending a stage where one is reachable.
 
-### Normal usage (once Docker/network access is available)
+### Normal usage (once Docker/network access, or a real Supabase project, is available)
 
 ```bash
 supabase start
 supabase db reset   # applies every migration + seed.sql from empty
 supabase test db    # or: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/security_assertions.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/functional_checks.sql
-supabase gen types typescript --local > src/types/database.ts
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/admin_bootstrap_checks.sql
+supabase gen types typescript --local > src/types/database.ts   # or --linked against a real project
 ```
 
-`functional_checks.sql` must be run through `psql` itself (not `supabase
-test db`, which expects pgTAP) — it uses psql's `\gset` and `:'var'`
-client-side substitution to pass values between statements.
+`functional_checks.sql` and `admin_bootstrap_checks.sql` must be run
+through `psql` itself (not `supabase test db`, which expects pgTAP) — they
+use psql's `\gset` and `:'var'` client-side substitution to pass values
+between statements.
 
 ## Current limitations (deferred to later stages)
 
-- No real authentication — `auth.uid()` is only ever populated by a real
-  Supabase session once auth is wired up (stage 3).
-- No admin-assignment RPC — first-admin bootstrap is the manual
-  `session_replication_role` procedure above.
-- No attachments, email notifications, or realtime.
+- Real authentication now exists (stage 3) — `auth.uid()` is populated by a
+  genuine Supabase session; see `docs/security.md` for the app-level auth
+  model. Assigning the first admin is still a deliberate, manual operation
+  (`supabase/scripts/make_admin.sql`), just no longer one requiring
+  disabled triggers.
+- No attachments, email notifications beyond Supabase's built-in password
+  recovery, or realtime.
 - No CSV export or admin dashboard aggregate queries.
 - `service_role` has no table access yet — add it deliberately when a
   concrete need exists.
+- No ticket data is read/written from the UI yet — that's stage 4.

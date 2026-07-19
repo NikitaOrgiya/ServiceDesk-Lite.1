@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 
+// Mirrors the shape of @supabase/auth-js's AuthError without importing it
+// directly — it's a transitive dependency of @supabase/supabase-js, not
+// one we declare ourselves, and its public shape (extends Error, adds
+// `code`/`status`) is simple enough to stand in for here.
+class FakeAuthError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, status: number, code: string) {
+    super(message);
+    this.name = "AuthApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
 describe("sanitizeError", () => {
   it("extracts message/code/details/hint from a Supabase-like error", () => {
     const result = sanitizeError({
@@ -66,5 +82,24 @@ describe("sanitizeError", () => {
     });
     expect(result.code).toBeUndefined();
     expect(result.details).toBeUndefined();
+  });
+
+  it("extracts message/code from a Supabase AuthError-shaped error", () => {
+    const result = sanitizeError(new FakeAuthError("Invalid login credentials", 400, "invalid_credentials"));
+    expect(result.message).toBe("Invalid login credentials");
+    expect(result.code).toBe("invalid_credentials");
+  });
+
+  it("never leaks the internal Supabase error object, only the sanitized fields", () => {
+    const original = new FakeAuthError(
+      "Invalid Refresh Token: access_token=abc123.def456.ghi789 rejected",
+      401,
+      "refresh_token_not_found"
+    );
+    const result = sanitizeError(original);
+
+    expect(result).not.toBe(original);
+    expect(result.message).not.toContain("abc123.def456.ghi789");
+    expect(JSON.stringify(result)).not.toContain("abc123");
   });
 });

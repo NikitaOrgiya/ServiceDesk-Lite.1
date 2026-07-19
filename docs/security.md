@@ -23,7 +23,7 @@ anything.
 | `profiles` | SELECT own row | ✗ | ✓ | ✓ | ✗ | RLS policy |
 | `profiles` | SELECT other rows | ✗ | ✗ | ✓ | ✗ | RLS policy (`is_admin()`) |
 | `profiles` | INSERT | ✗ | ✗ | ✗ | ✗ | No policy/grant — only `handle_new_user()` trigger |
-| `profiles` | UPDATE `role`/`is_active` | ✗ | ✗ | ✗ (no RPC yet) | ✗ | No policy/grant; `guard_profile_mutation()` trigger backstop |
+| `profiles` | UPDATE `role`/`is_active` | ✗ | ✗ | ✗ | ✗ | No policy/grant for any Data-API role; only `private.set_profile_role()`, unreachable from the Data API — see [Admin bootstrap](#admin-bootstrap) |
 | `tickets` | SELECT own | ✗ | ✓ | ✓ | ✗ | RLS policy |
 | `tickets` | SELECT others' | ✗ | ✗ | ✓ | ✗ | RLS policy (`is_admin()`) |
 | `tickets` | INSERT | ✗ | via `create_ticket` RPC | via `create_ticket` RPC | ✗ | No direct grant; RPC only |
@@ -52,15 +52,55 @@ anything.
       function being unreachable directly).
 - [x] Every `SECURITY DEFINER` function has `SET search_path = ''`.
 
+## Admin bootstrap
+
+Stage 2's process (`SET session_replication_role = replica`, disabling
+trigger firing for the session) is retired — it is no longer documented as
+the way to do this and is not used anywhere. Stage 3 replaces it with
+(`202607190012_admin_bootstrap_hardening.sql`):
+
+1. A `private` schema. `USAGE` is revoked from `PUBLIC`/`anon`/
+   `authenticated`/`service_role`, so none of them can resolve
+   `private.*` at all — this is checked *before* any function-level
+   `EXECUTE` grant is even consulted, which is what makes this
+   unreachable through the Supabase Data API specifically (PostgREST
+   always connects as one of those three roles).
+2. `private.set_profile_role(user_id, role)` — deliberately **not**
+   `SECURITY DEFINER` (it runs with the caller's own privileges, not an
+   owner's elevated ones), and independently refuses to run when
+   `current_user` is `anon`/`authenticated`/`service_role`. It validates
+   that both `auth.users` and `public.profiles` rows exist for the given
+   id, changes only `role`, and errors clearly if the user doesn't exist.
+3. `public.guard_profile_mutation()` (originally migration 05, replaced
+   here via `CREATE OR REPLACE` — the migration 05 *file* was not edited)
+   now permits a role/`is_active` change when the session already passes
+   `is_admin()` **or** there is no `request.jwt.claims` GUC set at all.
+   Every Supabase Data API call carries a JWT (even the anon key is one),
+   so an empty/absent claims GUC reliably means "this is a direct trusted
+   database session" (`psql`, Supabase Studio's SQL Editor), never a
+   PostgREST request. `current_user` can't be used for this same check
+   inside `guard_profile_mutation()` itself, because it's `SECURITY
+   DEFINER` — `current_user` there reflects the function's *owner*, not
+   the original caller, for the duration of the call.
+
+Verified by `supabase/tests/admin_bootstrap_checks.sql`: `authenticated`/
+`anon`/`service_role` all get `permission denied for schema private`; a
+plain authenticated session can't change its own role via a direct
+`UPDATE` (blocked by the missing table `GRANT`, matching the permission
+matrix above); the trusted session can assign `admin` with no trigger
+disabling of any kind; a repeated call is idempotent; an unknown user id
+fails with a clear error instead of silently doing nothing; and the
+original `is_admin()` bypass still works correctly even when
+`request.jwt.claims` *is* present (so an active admin isn't accidentally
+caught by the new branch).
+
+Run it: `supabase/scripts/make_admin.sql` (placeholder email only, never a
+real one in Git) — see the README's
+["Безопасное назначение admin"](../README.md#безопасное-назначение-admin)
+for the exact command.
+
 ## Known limitations / accepted risk
 
-- **Admin bootstrap requires disabling triggers for one statement.**
-  `guard_profile_mutation()` blocks role changes for *everyone*, including
-  the `postgres` superuser, since triggers fire regardless of role. The
-  documented bootstrap procedure (`session_replication_role = replica`) is
-  the standard way to perform a deliberate, privileged, one-off operation
-  like this — it requires direct database access, which is already a
-  strictly higher privilege level than anything the application exposes.
 - **`service_role` has no table grants yet.** This is intentional (see
   `docs/database.md`), but means any future background job or the admin
   Supabase client will need a *new, explicit* migration granting exactly
@@ -68,5 +108,15 @@ anything.
 - **Local verification used a hand-built `auth` stand-in, not real
   GoTrue.** `auth.uid()` and `auth.users` were reproduced closely enough to
   exercise every RLS policy and RPC in this project, but this is not a
-  substitute for testing against the real Supabase Auth schema once local
-  Docker access is available.
+  substitute for testing against the real Supabase Auth schema. Stage 3's
+  application-level auth code (login/logout/session/role checks) has
+  likewise only been verified with unit and smoke tests — real Supabase
+  Auth E2E has not run in this environment (no development project was
+  available); see the README's
+  ["Реальный Supabase в этой сессии"](../README.md#реальный-supabase-в-этой-сессии).
+- **Proxy (`src/proxy.ts`) is a UX shortcut, not an authorization
+  boundary.** It only verifies a JWT via `getClaims()` and never queries
+  `public.profiles` — role enforcement happens exclusively in
+  `requireEmployee()`/`requireAdmin()` inside the employee/admin layouts,
+  which run on every request to those sections regardless of what the
+  Proxy already did.

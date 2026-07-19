@@ -14,14 +14,18 @@ import {
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { siteConfig } from "@/config/site";
 import type { NavSection } from "@/config/navigation";
+import { formatRole } from "@/features/auth/roles";
+import type { ProfileViewModel } from "@/features/auth/profile-view-model";
+import { logoutAction } from "@/features/auth/actions/logout";
 
 type AppHeaderProps = {
   section: NavSection;
   navLabel: string;
   sectionTitle: string;
+  profile: ProfileViewModel;
 };
 
-export function AppHeader({ section, navLabel, sectionTitle }: AppHeaderProps) {
+export function AppHeader({ section, navLabel, sectionTitle, profile }: AppHeaderProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
@@ -61,22 +65,22 @@ export function AppHeader({ section, navLabel, sectionTitle }: AppHeaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Placeholder until stage 2 wires up the authenticated user. */}
-          <div className="hidden items-center gap-2 rounded-md border px-2 py-1.5 text-sm text-muted-foreground sm:flex">
-            <UserRound className="size-4" />
-            <span>Профиль</span>
+          <div className="hidden items-center gap-2 rounded-md border px-2 py-1.5 text-sm sm:flex">
+            <UserRound className="size-4 text-muted-foreground" />
+            <div className="flex flex-col leading-tight">
+              <span className="font-medium">{profile.fullName}</span>
+              <span className="text-xs text-muted-foreground">
+                {formatRole(profile.role)}
+                {profile.department ? ` · ${profile.department}` : ""}
+              </span>
+            </div>
           </div>
-          {/* Placeholder until stage 2 wires up real Supabase sign-out. */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled
-            title="Будет доступно после подключения авторизации"
-          >
-            <LogOut className="size-4" />
-            <span className="hidden sm:inline">Выйти</span>
-          </Button>
+          <form action={logoutAction}>
+            <Button type="submit" variant="outline" size="sm">
+              <LogOut className="size-4" />
+              <span className="hidden sm:inline">Выйти</span>
+            </Button>
+          </form>
         </div>
       </div>
     </header>

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle } from "lucide-react";
@@ -17,28 +16,23 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { loginFormSchema, type LoginFormValues } from "@/features/auth/schema";
-import { loginAction } from "@/features/auth/actions/login";
+import { newPasswordSchema, type NewPasswordValues } from "@/features/auth/schema";
+import { updatePasswordAction } from "@/features/auth/actions/update-password";
 
-type LoginFormProps = {
-  next?: string;
-};
-
-export function LoginForm({ next }: LoginFormProps) {
+export function ResetPasswordForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(loginFormSchema),
-    defaultValues: { email: "", password: "" },
+  const form = useForm<NewPasswordValues>({
+    resolver: zodResolver(newPasswordSchema),
+    defaultValues: { password: "", confirmPassword: "" },
   });
 
-  function onSubmit(values: LoginFormValues) {
+  function onSubmit(values: NewPasswordValues) {
     setFormError(null);
     startTransition(async () => {
-      // On success, loginAction redirects server-side and this promise
-      // never resolves with a value — it only returns on failure.
-      const result = await loginAction(values, next);
+      // On success, updatePasswordAction redirects server-side.
+      const result = await updatePasswordAction(values);
       if (result?.error) {
         setFormError(result.error);
       }
@@ -55,22 +49,21 @@ export function LoginForm({ next }: LoginFormProps) {
         {formError ? (
           <Alert variant="destructive">
             <AlertCircle />
-            <AlertTitle>Не удалось войти</AlertTitle>
+            <AlertTitle>Не удалось обновить пароль</AlertTitle>
             <AlertDescription>{formError}</AlertDescription>
           </Alert>
         ) : null}
 
         <FormField
           control={form.control}
-          name="email"
+          name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Email</FormLabel>
+              <FormLabel>Новый пароль</FormLabel>
               <FormControl>
                 <Input
-                  type="email"
-                  placeholder="name@company.com"
-                  autoComplete="email"
+                  type="password"
+                  autoComplete="new-password"
                   disabled={isPending}
                   {...field}
                 />
@@ -82,14 +75,14 @@ export function LoginForm({ next }: LoginFormProps) {
 
         <FormField
           control={form.control}
-          name="password"
+          name="confirmPassword"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Пароль</FormLabel>
+              <FormLabel>Подтвердите пароль</FormLabel>
               <FormControl>
                 <Input
                   type="password"
-                  autoComplete="current-password"
+                  autoComplete="new-password"
                   disabled={isPending}
                   {...field}
                 />
@@ -99,17 +92,8 @@ export function LoginForm({ next }: LoginFormProps) {
           )}
         />
 
-        <div className="flex justify-end">
-          <Link
-            href="/forgot-password"
-            className="text-sm text-muted-foreground hover:underline"
-          >
-            Забыли пароль?
-          </Link>
-        </div>
-
         <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Выполняется вход…" : "Войти"}
+          {isPending ? "Сохранение…" : "Сохранить новый пароль"}
         </Button>
       </form>
     </Form>
