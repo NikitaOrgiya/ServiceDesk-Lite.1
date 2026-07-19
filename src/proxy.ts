@@ -1,48 +1,27 @@
-import { NextResponse, type NextRequest } from "next/server";
-
-import { updateSession } from "@/lib/supabase/proxy";
-import { sanitizeNextPath } from "@/features/auth/redirect";
-
-const PROTECTED_PREFIXES = ["/app", "/admin"];
+import { auth } from "@/lib/auth/server";
 
 /**
- * Runs ahead of every non-static request (see `matcher` below).
+ * Runs ahead of every request under /app/** and /admin/** (see `matcher`
+ * below). Neon Auth's own middleware refreshes/validates the session
+ * cookie and redirects an anonymous visitor to `/login` — this replaces
+ * the Supabase-era manual cookie-refresh logic in
+ * src/lib/supabase/proxy.ts, which Neon Auth handles internally.
  *
- * Responsibilities, and ONLY these:
- *   1. Refresh Supabase auth cookies so a still-valid session doesn't
- *      silently expire between requests.
- *   2. Cheaply redirect a visitor with no session away from `/app`/`/admin`
- *      to `/login` — a fast, JWT-only check (see updateSession), no
- *      `public.profiles` query.
+ * The matcher is deliberately narrow (only the two protected sections)
+ * rather than a broad catch-all: unlike the Supabase-era proxy, which
+ * inspected every request and only *redirected* the protected prefixes,
+ * Neon Auth's middleware treats every path it is invoked on as requiring a
+ * session — so public routes (`/`, `/login`, `/forgot-password`, ...) must
+ * never be matched here at all.
  *
- * It deliberately does NOT decide role-based access (employee vs admin) —
- * that requires reading `public.profiles` and is re-checked in
- * src/app/app/layout.tsx and src/app/admin/layout.tsx via
- * requireEmployee()/requireAdmin() on every request to those sections.
- * Proxy redirects are a UX shortcut, not the authorization boundary.
+ * This is a UX shortcut, not the authorization boundary — it does NOT
+ * decide employee vs admin (that requires reading `public.profiles`) and
+ * does not replace requireEmployee()/requireAdmin(), which re-verify
+ * identity and role from the database on every request to those sections
+ * (see src/app/app/layout.tsx / src/app/admin/layout.tsx).
  */
-export async function proxy(request: NextRequest) {
-  const { response, userId } = await updateSession(request);
-  const { pathname } = request.nextUrl;
-
-  const isProtected = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
-  );
-
-  if (isProtected && !userId) {
-    const loginUrl = new URL("/login", request.url);
-    const next = sanitizeNextPath(pathname);
-    if (next) {
-      loginUrl.searchParams.set("next", next);
-    }
-    return NextResponse.redirect(loginUrl);
-  }
-
-  return response;
-}
+export default auth.middleware({ loginUrl: "/login" });
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map)$).*)",
-  ],
+  matcher: ["/app/:path*", "/admin/:path*"],
 };

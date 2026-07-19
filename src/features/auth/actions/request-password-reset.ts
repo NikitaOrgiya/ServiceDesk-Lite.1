@@ -1,8 +1,8 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth/server";
 import { passwordResetRequestSchema } from "@/features/auth/schema";
-import { getAuthCallbackUrl } from "@/features/auth/urls";
+import { getPasswordResetRedirectUrl } from "@/features/auth/urls";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 
@@ -15,7 +15,7 @@ export type PasswordResetRequestResult = {
 
 /**
  * Always returns the same neutral message regardless of whether the email
- * is registered, whether the input even parsed, or whether Supabase itself
+ * is registered, whether the input even parsed, or whether Neon Auth itself
  * returned an error — the response must never be usable to check which
  * emails have accounts. Real failures are still logged server-side.
  */
@@ -26,9 +26,9 @@ export async function requestPasswordResetAction(input: unknown): Promise<Passwo
     return { message: NEUTRAL_MESSAGE };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: getAuthCallbackUrl("/reset-password"),
+  const { error } = await auth.requestPasswordReset({
+    email: parsed.data.email,
+    redirectTo: getPasswordResetRedirectUrl(),
   });
 
   if (error) {

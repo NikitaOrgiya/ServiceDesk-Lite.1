@@ -4,21 +4,30 @@ import { z } from "zod";
 import { clientEnv } from "@/lib/env/client";
 
 /**
- * Server-only variables. `SUPABASE_SERVICE_ROLE_KEY` is intentionally optional
- * here so that a production build does not require a real service-role key
- * unless the admin client is actually invoked at runtime (see lib/supabase/admin.ts).
+ * Server-only variables. `NEON_AUTH_BASE_URL`/`NEON_AUTH_COOKIE_SECRET`/
+ * `NEON_DATA_API_URL` are required — the app cannot authenticate or read
+ * ticket data without them. `DATABASE_URL`/`DATABASE_MIGRATION_URL`/
+ * `NEON_API_KEY`/`NEON_PROJECT_ID`/`NEON_BRANCH_ID` are only consumed by
+ * Drizzle Kit and server-only scripts (never by this Next.js app's request
+ * handling), so they stay optional here and are read directly from
+ * `process.env` where actually used (see drizzle.config.ts, scripts/*.ts).
  */
 const serverEnvSchema = z.object({
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional(),
+  NEON_AUTH_BASE_URL: z.url(),
+  NEON_AUTH_COOKIE_SECRET: z.string().min(32, "NEON_AUTH_COOKIE_SECRET must be at least 32 characters"),
+  NEON_DATA_API_URL: z.url(),
 });
 
 function loadServerEnv() {
   const parsed = serverEnvSchema.safeParse({
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    NEON_AUTH_BASE_URL: process.env.NEON_AUTH_BASE_URL,
+    NEON_AUTH_COOKIE_SECRET: process.env.NEON_AUTH_COOKIE_SECRET,
+    NEON_DATA_API_URL: process.env.NEON_DATA_API_URL,
   });
 
   if (!parsed.success) {
-    throw new Error("Invalid server environment variables");
+    const missing = parsed.error.issues.map((issue) => issue.path.join(".")).join(", ");
+    throw new Error(`Missing or invalid server environment variables: ${missing}`);
   }
 
   return parsed.data;

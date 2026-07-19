@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth/server";
 import { newPasswordSchema } from "@/features/auth/schema";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
@@ -14,20 +14,27 @@ export type UpdatePasswordResult = {
 const GENERIC_UPDATE_ERROR = "Не удалось обновить пароль. Попробуйте запросить ссылку ещё раз.";
 
 /**
- * Requires an active recovery session already established by
- * /auth/callback exchanging the code Supabase emailed — this action does
- * not implement its own reset-token scheme. Never logs the password
- * itself, only the sanitized Supabase error (if any).
+ * Requires the `token` Neon Auth emailed in the password-reset link (read
+ * off /reset-password's own search params, not an established session —
+ * Better Auth's reset flow does not require a prior sign-in). Never logs
+ * the password or token themselves, only the sanitized Neon Auth error
+ * (if any).
  */
-export async function updatePasswordAction(input: unknown): Promise<UpdatePasswordResult> {
+export async function updatePasswordAction(
+  input: unknown,
+  token: string | undefined
+): Promise<UpdatePasswordResult> {
   const parsed = newPasswordSchema.safeParse(input);
 
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? GENERIC_UPDATE_ERROR };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.updateUser({ password: parsed.data.password });
+  if (!token) {
+    return { error: GENERIC_UPDATE_ERROR };
+  }
+
+  const { error } = await auth.resetPassword({ newPassword: parsed.data.password, token });
 
   if (error) {
     const sanitized = sanitizeError(error);

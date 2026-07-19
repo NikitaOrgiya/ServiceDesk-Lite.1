@@ -1,17 +1,12 @@
 import { clientEnv } from "@/lib/env/client";
 
 /**
- * Builds the `/auth/callback` URL used as `emailRedirectTo`/`redirectTo` for
- * Supabase Auth email flows (password recovery). Single place that knows
- * this shape, built from `NEXT_PUBLIC_SITE_URL` — no separate
- * "password reset URL" env var is needed.
- *
- * This exact URL must be present in the Supabase project's Auth ->
- * URL Configuration -> Redirect URLs allow-list, or Supabase will refuse to
- * honor it — see docs/database.md.
+ * Builds the URL Neon Auth's password-reset email links to. Better Auth's
+ * email/password flow appends its own `token` query param to this exact
+ * URL — unlike the Supabase-era flow, there is no separate `/auth/callback`
+ * code-exchange step: `/reset-password` reads `token` straight off its own
+ * search params (see src/app/(auth)/reset-password/page.tsx).
  */
-export function getAuthCallbackUrl(next: string): string {
-  const url = new URL("/auth/callback", clientEnv.NEXT_PUBLIC_SITE_URL);
-  url.searchParams.set("next", next);
-  return url.toString();
+export function getPasswordResetRedirectUrl(): string {
+  return new URL("/reset-password", clientEnv.NEXT_PUBLIC_SITE_URL).toString();
 }
