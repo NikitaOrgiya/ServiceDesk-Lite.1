@@ -14,7 +14,7 @@ import { profiles } from "@/db/schema/profiles";
 
 /**
  * Internal counter used only by generate_ticket_number() to mint atomic
- * ticket numbers. No anon/authenticated Data API access exists to this
+ * ticket numbers. No anonymous/authenticated Data API access exists to this
  * table (see the RLS/GRANT migration).
  */
 export const ticketNumberCounters = pgTable(

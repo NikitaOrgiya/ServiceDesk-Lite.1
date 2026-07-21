@@ -53,11 +53,11 @@ the concrete Neon replacement and migration status.
 | `is_valid_ticket_status_transition()`, `enforce_ticket_workflow()`, `record_ticket_history()` | `supabase/migrations/202607190007_*.sql` | Same functions, `auth.user_id()`, `TEXT` ids | Replaced |
 | `add_ticket_comment()`, `cancel_own_ticket()`, `admin_set_ticket_*()` | `supabase/migrations/202607190008_*.sql` | Same functions, `auth.user_id()`, `TEXT` ids | Replaced |
 | RLS policies (5 tables) | `supabase/migrations/202607190009_*.sql` | Same policies, `auth.user_id()` | Replaced |
-| Table GRANTs to `anon`/`authenticated`/`service_role` | `supabase/migrations/202607190010_*.sql` | Same GRANT shape; Data API roles are `anon`/`authenticated` (no `service_role` concept — admin operations go through `DATABASE_URL`) | Replaced |
+| Table GRANTs to `anon`/`authenticated`/`service_role` | `supabase/migrations/202607190010_*.sql` | Same GRANT shape; Data API roles are `anonymous`/`authenticated` (no `service_role` concept — admin operations go through `DATABASE_URL`) | Replaced |
 | Function EXECUTE grants + `search_path` hardening check | `supabase/migrations/202607190011_*.sql` | Same, re-targeted at the renamed function set | Replaced |
 | `private.set_profile_role()` admin bootstrap, PostgREST-JWT-GUC bypass | `supabase/migrations/202607190012_*.sql` | Re-expressed against the Data API's own request-context GUC (verified against the installed Neon Data API version — see README RLS section); `auth.users` existence check removed (no such table) | Replaced |
 | `can_view_profile()` + relaxed profile visibility policy | `supabase/migrations/202607190013_*.sql` | Same function, `auth.user_id()`, `TEXT` ids | Replaced |
-| `supabase/scripts/make_admin.sql`, `supabase/seed.sql` | — | `scripts/make-admin.ts`, `scripts/create-demo-users.ts` | Replaced |
+| `supabase/scripts/make_admin.sql`, `supabase/seed.sql` | — | `scripts/make-admin.ts`, `scripts/e2e-neon-auth.ts` (`npm run test:e2e:neon` — real sign-up + `ensure_profile()` via Data API; superseded an earlier `scripts/create-demo-users.ts` that inserted into `public.profiles` directly and was removed) | Replaced |
 | `supabase/config.toml` (local dev stack) | — | Not applicable — Neon has no local CLI stack equivalent in scope here; local dev connects to a Neon branch | Removed |
 
 ## Tests

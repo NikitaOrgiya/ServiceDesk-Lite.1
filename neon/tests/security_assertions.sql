@@ -38,7 +38,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 2. anon has zero table privileges on every application table.
+-- 2. anonymous has zero table privileges on every application table.
 -- ---------------------------------------------------------------------------
 DO $$
 DECLARE
@@ -49,9 +49,9 @@ BEGIN
   LOOP
     FOREACH v_priv IN ARRAY ARRAY['SELECT', 'INSERT', 'UPDATE', 'DELETE']
     LOOP
-      IF has_table_privilege('anon', format('public.%I', v_table), v_priv) THEN
+      IF has_table_privilege('anonymous', format('public.%I', v_table), v_priv) THEN
         INSERT INTO _security_assertion_failures
-        VALUES (format('anon unexpectedly has %s on public.%s', v_priv, v_table));
+        VALUES (format('anonymous unexpectedly has %s on public.%s', v_priv, v_table));
       END IF;
     END LOOP;
   END LOOP;
@@ -128,7 +128,7 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 5. PUBLIC and anon have EXECUTE on nothing in public schema; authenticated
+-- 5. PUBLIC and anonymous have EXECUTE on nothing in public schema; authenticated
 --    has EXECUTE on exactly the allowed RPC/helper set and nothing else.
 -- ---------------------------------------------------------------------------
 DO $$
@@ -159,9 +159,9 @@ BEGIN
       VALUES (format('PUBLIC unexpectedly has EXECUTE on %s()', v_fn.proname));
     END IF;
 
-    IF has_function_privilege('anon', v_fn.oid, 'EXECUTE') THEN
+    IF has_function_privilege('anonymous', v_fn.oid, 'EXECUTE') THEN
       INSERT INTO _security_assertion_failures
-      VALUES (format('anon unexpectedly has EXECUTE on %s()', v_fn.proname));
+      VALUES (format('anonymous unexpectedly has EXECUTE on %s()', v_fn.proname));
     END IF;
 
     IF v_fn.proname = ANY (v_allowed) THEN
@@ -203,12 +203,12 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 7. private schema is unreachable by anon/authenticated (no USAGE grant).
+-- 7. private schema is unreachable by anonymous/authenticated (no USAGE grant).
 -- ---------------------------------------------------------------------------
 DO $$
 BEGIN
-  IF has_schema_privilege('anon', 'private', 'USAGE') THEN
-    INSERT INTO _security_assertion_failures VALUES ('anon unexpectedly has USAGE on schema private');
+  IF has_schema_privilege('anonymous', 'private', 'USAGE') THEN
+    INSERT INTO _security_assertion_failures VALUES ('anonymous unexpectedly has USAGE on schema private');
   END IF;
   IF has_schema_privilege('authenticated', 'private', 'USAGE') THEN
     INSERT INTO _security_assertion_failures VALUES ('authenticated unexpectedly has USAGE on schema private');

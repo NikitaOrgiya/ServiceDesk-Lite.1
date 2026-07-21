@@ -1,8 +1,9 @@
 -- Shared preamble for the neon/tests/*.sql scripts. Included via psql's
 -- \ir at the top of each test file.
 --
--- On a real Neon project with the Data API enabled, `anon`/`authenticated`
--- roles and `auth.user_id()` already exist — this preamble is a no-op
+-- On a real Neon project with the Data API enabled, `anonymous`/
+-- `authenticated` roles and `auth.user_id()` already exist — this preamble
+-- is a no-op
 -- there (every guard below only creates something if it is genuinely
 -- absent). Its actual purpose is to make these tests runnable against a
 -- plain local/native PostgreSQL instance (no Neon project available in
@@ -15,8 +16,8 @@
 
 DO $$
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
-    CREATE ROLE anon NOLOGIN;
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anonymous') THEN
+    CREATE ROLE anonymous NOLOGIN;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN

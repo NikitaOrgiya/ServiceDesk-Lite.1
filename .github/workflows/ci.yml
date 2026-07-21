@@ -72,8 +72,8 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: SQL security tests
-        run: npm run test:db
+      - name: SQL security tests (live Neon structural/security audit only)
+        run: npm run test:db:security
 
   # Runs only when a real Neon development branch (Neon Auth + Data API
   # enabled) and real test accounts are configured as repository/

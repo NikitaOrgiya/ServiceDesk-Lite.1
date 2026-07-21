@@ -12,12 +12,12 @@
 --
 -- Mechanism, and why it's closed to the Data API:
 --   1. A `private` schema holds `private.set_profile_role()`. USAGE on this
---      schema is revoked from PUBLIC/anon/authenticated below, so the Data
---      API (which always connects as anon or authenticated) can never even
---      resolve `private.*`.
+--      schema is revoked from PUBLIC/anonymous/authenticated below, so the
+--      Data API (which always connects as anonymous or authenticated) can
+--      never even resolve `private.*`.
 --   2. EXECUTE on the function itself is also explicitly revoked from both
 --      for defense in depth, and the function independently checks
---      `current_user` and refuses to run as anon/authenticated.
+--      `current_user` and refuses to run as anonymous/authenticated.
 --   3. public.guard_profile_mutation() (0001) allows a role/is_active
 --      change when there is no `request.jwt.claims` GUC set at all — i.e.
 --      the call did not come through the Data API — matching only a
@@ -25,10 +25,10 @@
 
 CREATE SCHEMA private;
 
-REVOKE ALL ON SCHEMA private FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SCHEMA private FROM PUBLIC, anonymous, authenticated;
 
 COMMENT ON SCHEMA private IS
-  'Not exposed to the Neon Data API (no USAGE grant to anon/authenticated). '
+  'Not exposed to the Neon Data API (no USAGE grant to anonymous/authenticated). '
   'Holds owner-only operational functions such as admin bootstrap — see '
   'docs/migration/supabase-to-neon.md.';
 
@@ -43,7 +43,7 @@ AS $$
 DECLARE
   v_row public.profiles;
 BEGIN
-  IF current_user IN ('anon', 'authenticated') THEN
+  IF current_user IN ('anonymous', 'authenticated') THEN
     RAISE EXCEPTION
       'private.set_profile_role must be run by a trusted database session, not via the Data API'
       USING ERRCODE = '42501';
@@ -69,7 +69,7 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION private.set_profile_role(TEXT, public.user_role)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
 
 -- Re-run the search_path hardening self-check so this new SECURITY DEFINER
 -- surface stays covered (guard_profile_mutation is unchanged in this

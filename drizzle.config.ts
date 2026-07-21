@@ -1,3 +1,4 @@
+import "./envConfig";
 import { defineConfig } from "drizzle-kit";
 
 // Uses DATABASE_MIGRATION_URL (a separate, typically unpooled connection

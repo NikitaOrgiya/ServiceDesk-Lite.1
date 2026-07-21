@@ -160,9 +160,9 @@ PostgreSQL RLS
 
 - в интерфейсе нет и не будет формы регистрации, `/signup`, `/register` или
   `/api/create-user`;
-- `auth.signUp.email()` вызывается **только** из `scripts/create-demo-users.ts`
-  (доверенный, не-HTTP, confirmation-gated скрипт) — никогда из клиентского
-  кода или публичного роута;
+- `auth.signUp.email()` вызывается **только** из доверенных, не-HTTP скриптов
+  (`scripts/e2e-neon-auth.ts` — development-only E2E-фикстуры на
+  `servicedesk-lite-dev`) — никогда из клиентского кода или публичного роута;
 - остаточный риск: сам Neon Auth API (`sign-up/email`) технически доступен
   по HTTP через `/api/auth/sign-up/email`, если кто-то обратится к нему
   напрямую, минуя интерфейс — это не проверялось и не блокируется отдельным
@@ -183,7 +183,7 @@ SELECT и RPC идут через `createDataApiClient()` с JWT текущей 
 
 - **JWT source**: `getUserAccessToken()` → Better Auth JWT-плагин `/token`.
 - **`auth.user_id()`** — JWT `sub` claim, аналог Supabase `auth.uid()`.
-- **Роли Data API**: `anon`, `authenticated` — нет `service_role`.
+- **Роли Data API**: `anonymous`, `authenticated` — нет `service_role`.
   Доверенные административные операции идут через `DATABASE_URL` напрямую
   (`src/db/client.ts`, `scripts/*.ts`), а не через привилегированную
   Postgres-роль Data API.
@@ -308,19 +308,30 @@ npm run dev
 
 ## 16. Создание Employee/Admin
 
-Публичной регистрации нет. Тестовые аккаунты:
+Публичной регистрации нет. Development-only тестовые аккаунты (Employee A,
+Employee B, Admin) создаются и переиспользуются через live E2E-раннер —
+единственный проверенный provisioning-workflow в этом репозитории:
 
 ```bash
-DEMO_EMPLOYEE_EMAIL=... DEMO_EMPLOYEE_PASSWORD=... \
-DEMO_ADMIN_EMAIL=... DEMO_ADMIN_PASSWORD=... \
-npm run db:create-demo-users
+E2E_EMPLOYEE_A_EMAIL=... E2E_EMPLOYEE_A_PASSWORD=... \
+E2E_EMPLOYEE_B_EMAIL=... E2E_EMPLOYEE_B_PASSWORD=... \
+E2E_ADMIN_EMAIL=... E2E_ADMIN_PASSWORD=... \
+npm run test:e2e:neon
 ```
 
-Идемпотентно, confirmation-gated (требует ввести `yes`), создаёт обоих через
-`auth.signUp.email()` + `ensure_profile`, промоутит Admin Demo через
-`private.set_profile_role`. Назначить admin существующему профилю по id
-(id — из Neon Console → Auth → Users, это приложение не читает внутреннюю
-таблицу пользователей Neon Auth напрямую):
+Реально вызывает `auth.signUp.email()`/`auth.signIn.email()`, получает
+настоящий JWT через `/token`, вызывает `ensure_profile()` через Data API
+(никогда не пишет в `public.profiles` напрямую) и промоутит только Admin через
+`private.set_profile_role` по доверенной `DATABASE_MIGRATION_URL`-сессии.
+Явно проверяет, что целевая ветка — `servicedesk-lite-dev`, и отказывается
+работать иначе. Бизнес-данные теста (тикеты/комментарии/история) удаляются
+доверенным cleanup в конце прогона; сами Auth-аккаунты и их профили
+намеренно сохраняются для повторного использования.
+
+Назначить admin существующему профилю по id отдельно (id — из Neon Console →
+Auth → Users, это приложение не читает внутреннюю таблицу пользователей Neon
+Auth напрямую) можно через operator-only скрипт, который сам проверяет, что
+подключён именно к `servicedesk-lite-dev`, и не выводит id/email в лог:
 
 ```bash
 npm run db:make-admin -- <neon-auth-user-id>
@@ -339,7 +350,9 @@ npm run test:e2e           # smoke — всегда
 npm run test:e2e:auth      # реальный Neon Auth E2E — только с E2E_* credentials
 npm run test:e2e:employee  # реальный employee workflow E2E — только с credentials
 npm run db:generate / db:check / db:migrate
-npm run test:db            # SQL security/functional тесты — DATABASE_URL, disposable DB
+npm run test:db:security  # privilege/RLS introspection (security_assertions.sql) — safe against live Neon
+npm run test:db:local     # functional_checks.sql + admin_bootstrap_checks.sql — LOCAL Postgres only, refuses Neon
+npm run test:e2e:neon     # real Neon Auth sign-in + Data API RPC/RLS E2E — needs E2E_* credentials
 ```
 
 ### Что реально проверено
@@ -484,7 +497,7 @@ src/
 e2e/
 drizzle/                       # 0000 (generated) + 0001-0010 (custom SQL)
 neon/tests/                    # security_assertions, functional_checks, admin_bootstrap_checks
-scripts/                       # migrate, check-neon-connection, create-demo-users, make-admin, run-sql-tests
+scripts/                       # migrate, check-neon-connection, make-admin, test-db-security, test-db-local, e2e-neon-auth
 docs/
 ├── migration/
 │   ├── supabase-to-neon.md    # полная карта замены компонентов

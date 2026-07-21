@@ -44,7 +44,7 @@ CREATE POLICY profiles_select_own_admin_or_related
   TO authenticated
   USING (public.can_view_profile(id));
 
-REVOKE ALL ON FUNCTION public.can_view_profile(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.can_view_profile(TEXT) FROM PUBLIC, anonymous, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.can_view_profile(TEXT) TO authenticated;
 

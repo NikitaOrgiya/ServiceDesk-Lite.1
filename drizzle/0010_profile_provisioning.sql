@@ -42,7 +42,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.ensure_profile(TEXT) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.ensure_profile(TEXT) FROM PUBLIC, anonymous, authenticated;
 GRANT EXECUTE ON FUNCTION public.ensure_profile(TEXT) TO authenticated;
 
 DO $$

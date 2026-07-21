@@ -6,27 +6,27 @@
 -- nothing in 0001-0004 relied on that default, but it must still be
 -- revoked explicitly here rather than assumed away.
 
-REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.guard_profile_mutation() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.can_access_ticket(UUID) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.generate_ticket_number() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.set_updated_at() FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.guard_profile_mutation() FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.can_access_ticket(UUID) FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.generate_ticket_number() FROM PUBLIC, anonymous, authenticated;
 REVOKE ALL ON FUNCTION public.create_ticket(TEXT, TEXT, public.ticket_category, public.ticket_priority)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
 REVOKE ALL ON FUNCTION public.is_valid_ticket_status_transition(public.ticket_status, public.ticket_status)
-  FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.enforce_ticket_workflow() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.record_ticket_history() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.add_ticket_comment(UUID, TEXT) FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.cancel_own_ticket(UUID) FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.enforce_ticket_workflow() FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.record_ticket_history() FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.add_ticket_comment(UUID, TEXT) FROM PUBLIC, anonymous, authenticated;
+REVOKE ALL ON FUNCTION public.cancel_own_ticket(UUID) FROM PUBLIC, anonymous, authenticated;
 REVOKE ALL ON FUNCTION public.admin_set_ticket_status(UUID, public.ticket_status)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
 REVOKE ALL ON FUNCTION public.admin_set_ticket_priority(UUID, public.ticket_priority)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
 REVOKE ALL ON FUNCTION public.admin_set_ticket_assignee(UUID, TEXT)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
 REVOKE ALL ON FUNCTION public.admin_set_ticket_due_at(UUID, TIMESTAMPTZ)
-  FROM PUBLIC, anon, authenticated;
+  FROM PUBLIC, anonymous, authenticated;
 
 -- Trigger functions and purely-internal helpers stay revoked for every
 -- role — they are only ever invoked by trigger firing or by another

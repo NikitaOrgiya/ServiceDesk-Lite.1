@@ -71,7 +71,7 @@ SELECT pg_temp.expect_denied(
 );
 RESET ROLE;
 
-SET ROLE anon;
+SET ROLE anonymous;
 SELECT pg_temp.expect_denied(
   format('SELECT private.set_profile_role(%L, %L::public.user_role)',
     'bootstrap-employee-test-id', 'admin')
