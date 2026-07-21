@@ -15,8 +15,9 @@ jobs:
 
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
-      NEXT_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      NEON_AUTH_BASE_URL: https://ci-placeholder.neonauth.example.com
+      NEON_AUTH_COOKIE_SECRET: ci-placeholder-cookie-secret-32-characters-long
+      NEON_DATA_API_URL: https://ci-placeholder-data-api.example.com
 
     steps:
       - name: Checkout
@@ -43,16 +44,48 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Runs only when a real development Supabase project and real test
-  # accounts are configured as repository/environment secrets — see
-  # README.md for the full list. Never made required for the main job
-  # above, and no secret value is ever written into this file.
+  # Runs only when GitHub Secrets for a disposable Neon test branch are
+  # configured — see README.md. Never applies migrations to a production
+  # branch (there is no automatic migration-apply step in this workflow at
+  # all), and no connection string or secret value is ever printed.
+  db-security-tests:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: secrets.NEON_TEST_DATABASE_URL != ''
+
+    env:
+      DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: SQL security tests (live Neon structural/security audit only)
+        run: npm run test:db:security
+
+  # Runs only when a real Neon development branch (Neon Auth + Data API
+  # enabled) and real test accounts are configured as repository/
+  # environment secrets — see README.md for the full list. Never made
+  # required for the main job above, and no secret value is ever written
+  # into this file.
   auth-e2e:
     runs-on: ubuntu-latest
     needs: build-and-test
     if: >
-      secrets.E2E_SUPABASE_URL != '' &&
-      secrets.E2E_SUPABASE_ANON_KEY != '' &&
+      secrets.E2E_NEON_AUTH_BASE_URL != '' &&
+      secrets.E2E_NEON_DATA_API_URL != '' &&
       secrets.E2E_EMPLOYEE_EMAIL != '' &&
       secrets.E2E_EMPLOYEE_PASSWORD != '' &&
       secrets.E2E_ADMIN_EMAIL != '' &&
@@ -60,8 +93,9 @@ jobs:
 
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      NEON_AUTH_BASE_URL: ${{ secrets.E2E_NEON_AUTH_BASE_URL }}
+      NEON_AUTH_COOKIE_SECRET: ${{ secrets.E2E_NEON_AUTH_COOKIE_SECRET }}
+      NEON_DATA_API_URL: ${{ secrets.E2E_NEON_DATA_API_URL }}
       E2E_EMPLOYEE_EMAIL: ${{ secrets.E2E_EMPLOYEE_EMAIL }}
       E2E_EMPLOYEE_PASSWORD: ${{ secrets.E2E_EMPLOYEE_PASSWORD }}
       E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
@@ -86,7 +120,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Real Supabase Auth E2E
+      - name: Real Neon Auth E2E
         run: npm run test:e2e:auth
 
   # Same gating as auth-e2e — this suite additionally exercises the
@@ -97,15 +131,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-and-test
     if: >
-      secrets.E2E_SUPABASE_URL != '' &&
-      secrets.E2E_SUPABASE_ANON_KEY != '' &&
+      secrets.E2E_NEON_AUTH_BASE_URL != '' &&
+      secrets.E2E_NEON_DATA_API_URL != '' &&
       secrets.E2E_EMPLOYEE_EMAIL != '' &&
       secrets.E2E_EMPLOYEE_PASSWORD != ''
 
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
-      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
-      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.E2E_SUPABASE_ANON_KEY }}
+      NEON_AUTH_BASE_URL: ${{ secrets.E2E_NEON_AUTH_BASE_URL }}
+      NEON_AUTH_COOKIE_SECRET: ${{ secrets.E2E_NEON_AUTH_COOKIE_SECRET }}
+      NEON_DATA_API_URL: ${{ secrets.E2E_NEON_DATA_API_URL }}
       E2E_EMPLOYEE_EMAIL: ${{ secrets.E2E_EMPLOYEE_EMAIL }}
       E2E_EMPLOYEE_PASSWORD: ${{ secrets.E2E_EMPLOYEE_PASSWORD }}
 
@@ -128,5 +163,5 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Real Supabase employee ticket workflow E2E
+      - name: Real Neon employee ticket workflow E2E
         run: npm run test:e2e:employee

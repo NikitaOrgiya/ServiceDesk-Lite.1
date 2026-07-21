@@ -10,17 +10,20 @@ import {
 } from "@/components/ui/card";
 import { ResetPasswordForm } from "@/features/auth/reset-password-form";
 import { siteConfig } from "@/config/site";
-import { getCurrentUser } from "@/features/auth/server/get-current-user";
 
-// This page does not implement its own reset-token scheme — it relies on
-// the recovery session /auth/callback already established by exchanging
-// Supabase's emailed code. No session at all means the link was never
-// followed (or already used/expired), so there is nothing to let the user
-// do here except request a new one.
-export default async function ResetPasswordPage() {
-  const user = await getCurrentUser();
+type ResetPasswordPageProps = {
+  searchParams: Promise<{ token?: string }>;
+};
 
-  if (!user) {
+// Neon Auth's password-reset email links here with a `token` query param
+// (Better Auth's email/password reset flow) — there is no established
+// "recovery session" to check for, unlike the Supabase-era flow. No token
+// at all means the link was never followed (or is malformed), so there is
+// nothing to let the user do here except request a new one.
+export default async function ResetPasswordPage({ searchParams }: ResetPasswordPageProps) {
+  const { token } = await searchParams;
+
+  if (!token) {
     redirect("/forgot-password");
   }
 
@@ -35,7 +38,7 @@ export default async function ResetPasswordPage() {
           <CardDescription>Придумайте новый пароль для входа.</CardDescription>
         </CardHeader>
         <CardContent>
-          <ResetPasswordForm />
+          <ResetPasswordForm token={token} />
         </CardContent>
       </Card>
     </div>

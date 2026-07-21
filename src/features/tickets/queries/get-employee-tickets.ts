@@ -1,9 +1,9 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
+import { createDataApiClient } from "@/lib/neon/data-api";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
-import { toSingleEmbed } from "@/features/tickets/utils/supabase-embed";
+import { toSingleEmbed } from "@/features/tickets/utils/postgrest-embed";
 import type { TicketListQuery } from "@/features/tickets/schemas/list-query";
 import type { TicketCategory, TicketPriority } from "@/features/tickets/schemas/create-ticket";
 import type { TicketListItem, TicketStatus } from "@/features/tickets/types/ticket";
@@ -14,7 +14,7 @@ import type { TicketListItem, TicketStatus } from "@/features/tickets/types/tick
  * containing them could otherwise inject extra filter clauses into the
  * request. Wrapping the value in a double-quoted PostgREST string (and
  * escaping any embedded backslash/quote) makes it opaque to that parser.
- * This is unrelated to SQL: the Supabase query builder is doing the actual
+ * This is unrelated to SQL: the Neon Data API client is doing the actual
  * SQL parameterization, this only sanitizes the filter-string argument we
  * hand to it — there is no manual SQL string concatenation anywhere here.
  */
@@ -33,17 +33,17 @@ export type EmployeeTicketsResult = {
  * — `sort` and `pageSize` are closed enums, so no caller-supplied column
  * name or page size ever reaches `.order()`/`.range()`. The assignee name
  * is embedded in this same query (one round trip for the whole page, not
- * one profile lookup per row).
+ * one profile lookup per row) via the Drizzle-generated FK constraint name.
  */
 export async function getEmployeeTickets(
   query: TicketListQuery
 ): Promise<EmployeeTicketsResult | null> {
-  const supabase = await createClient();
+  const client = createDataApiClient();
 
-  let builder = supabase
+  let builder = client
     .from("tickets")
     .select(
-      "id, public_number, title, category, priority, status, created_at, assignee:profiles!tickets_assignee_id_fkey(full_name)",
+      "id, public_number, title, category, priority, status, created_at, assignee:profiles!tickets_assignee_id_profiles_id_fk(full_name)",
       { count: "exact" }
     );
 

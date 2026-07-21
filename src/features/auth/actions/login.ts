@@ -2,8 +2,9 @@
 
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth/server";
 import { loginFormSchema } from "@/features/auth/schema";
+import { ensureProfileForCurrentUser } from "@/features/auth/server/ensure-profile";
 import { getCurrentProfile } from "@/features/auth/server/get-current-profile";
 import { redirectByRole } from "@/features/auth/server/redirect-by-role";
 import { sanitizeNextPath } from "@/features/auth/redirect";
@@ -20,9 +21,10 @@ const GENERIC_LOGIN_ERROR = "Не удалось войти. Проверьте 
 /**
  * Server Action backing the login form. Re-validates with the same Zod
  * schema the client used (never trusts client-side validation alone), uses
- * `supabase.auth.signInWithPassword`, then loads the profile from
- * `public.profiles` to decide where to send the user — never from the
- * login form, a cookie, or Supabase metadata.
+ * Neon Auth's `auth.signIn.email`, provisions the caller's `profiles` row
+ * if this is their first sign-in (see ensureProfileForCurrentUser), then
+ * loads the profile from `public.profiles` to decide where to send the
+ * user — never from the login form or a cookie.
  *
  * On success this redirects (via `redirectByRole`/`redirect`, which throw)
  * and never returns. It only returns a value on failure, for the form to
@@ -36,11 +38,10 @@ export async function loginAction(input: unknown, next?: string | null): Promise
   }
 
   const { email, password } = parsed.data;
-  const supabase = await createClient();
 
-  const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error: signInError } = await auth.signIn.email({ email, password });
 
-  if (signInError) {
+  if (signInError || !data?.user) {
     const sanitized = sanitizeError(signInError);
     logger.warn({
       event: "auth:login_failed",
@@ -51,6 +52,8 @@ export async function loginAction(input: unknown, next?: string | null): Promise
     return { error: GENERIC_LOGIN_ERROR };
   }
 
+  await ensureProfileForCurrentUser(data.user.name ?? null);
+
   const profile = await getCurrentProfile();
 
   if (!profile) {
@@ -58,7 +61,7 @@ export async function loginAction(input: unknown, next?: string | null): Promise
       event: "auth:profile_missing",
       message: "Login succeeded but the account has no profile row",
     });
-    await supabase.auth.signOut();
+    await auth.signOut();
     redirect("/unauthorized");
   }
 
@@ -67,7 +70,7 @@ export async function loginAction(input: unknown, next?: string | null): Promise
       event: "auth:inactive_profile",
       message: "Inactive profile attempted to log in",
     });
-    await supabase.auth.signOut();
+    await auth.signOut();
     redirect("/unauthorized");
   }
 

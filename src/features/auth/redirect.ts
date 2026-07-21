@@ -46,24 +46,6 @@ export function sanitizeNextPath(candidate: string | null | undefined): string |
   return candidate;
 }
 
-// Exact-path allow-list for /auth/callback's `next` param — this route is
-// reached before we necessarily know the caller's role (e.g. straight after
-// a password-recovery link), so it accepts one extra destination beyond
-// the /app and /admin sections that sanitizeNextPath covers.
-const AUTH_CALLBACK_EXTRA_PATHS = new Set(["/reset-password"]);
-
-/**
- * Same contract as sanitizeNextPath, extended with the one additional
- * destination /auth/callback is allowed to send a user to.
- */
-export function sanitizeAuthCallbackNextPath(candidate: string | null | undefined): string | null {
-  if (candidate && AUTH_CALLBACK_EXTRA_PATHS.has(candidate)) {
-    return candidate;
-  }
-
-  return sanitizeNextPath(candidate);
-}
-
 /** Where a given application role lands by default. */
 export function getRoleHomePath(role: UserRole): "/app" | "/admin" {
   return role === "admin" ? "/admin" : "/app";

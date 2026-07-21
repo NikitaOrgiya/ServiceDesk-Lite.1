@@ -2,20 +2,19 @@
 
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth/server";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 
 /**
- * Server Action for logout. Calls `supabase.auth.signOut()`, which clears
- * the session server-side and instructs `@supabase/ssr` to remove the auth
- * cookies from the response — this is not a client-side localStorage clear,
- * so a browser "back" navigation cannot resurrect protected content, and
- * the next request to `/app` or `/admin` is caught by requireUser().
+ * Server Action for logout. Calls Neon Auth's `auth.signOut()`, which
+ * clears the session server-side and removes the auth cookies from the
+ * response — this is not a client-side localStorage clear, so a browser
+ * "back" navigation cannot resurrect protected content, and the next
+ * request to `/app` or `/admin` is caught by requireUser().
  */
 export async function logoutAction(): Promise<never> {
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signOut();
+  const { error } = await auth.signOut();
 
   if (error) {
     const sanitized = sanitizeError(error);

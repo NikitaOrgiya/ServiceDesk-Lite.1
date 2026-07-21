@@ -1,16 +1,15 @@
 import "server-only";
 import { z } from "zod";
 
-import { createClient } from "@/lib/supabase/server";
+import { createDataApiClient } from "@/lib/neon/data-api";
 import { getCurrentUser } from "@/features/auth/server/get-current-user";
 import { USER_ROLES } from "@/features/auth/roles";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 
-// `src/types/database.ts` is still the stage-1/2 placeholder (see
-// lib/supabase/server.ts), so the raw row from `.from("profiles")` is
-// validated here at the runtime boundary instead of trusted from a
-// generated type.
+// Runtime boundary validation for the raw Data API row — see the same note
+// in src/db/types.ts about not conflating Drizzle's own inferred types
+// (server-side schema source of truth) with an external HTTP response shape.
 const profileRowSchema = z.object({
   id: z.string(),
   full_name: z.string(),
@@ -28,10 +27,11 @@ export type CurrentProfile = {
 };
 
 /**
- * Loads the caller's own profile from `public.profiles` — the only source
- * of truth for `role` and `is_active`. Never derives either from
- * `raw_user_meta_data`, `app_metadata`, a query parameter, or a cookie the
- * application itself set.
+ * Loads the caller's own profile from `public.profiles` via the Neon Data
+ * API (RLS-scoped to the caller's own row, or all rows for an admin — see
+ * drizzle/0009_profile_visibility_for_related_tickets.sql) — the only
+ * source of truth for `role` and `is_active`. Never derives either from a
+ * query parameter or a cookie the application itself set.
  */
 export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   const user = await getCurrentUser();
@@ -39,8 +39,8 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
     return null;
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase
+  const client = createDataApiClient();
+  const { data, error } = await client
     .from("profiles")
     .select("id, full_name, role, department, is_active")
     .eq("id", user.id)

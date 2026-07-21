@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
 /**
- * Real Supabase employee ticket workflow E2E — requires a genuine
- * development Supabase project plus a real employee test account (the same
- * E2E_EMPLOYEE_EMAIL/E2E_EMPLOYEE_PASSWORD used by auth.spec.ts). Never run
- * against production.
+ * Real Neon employee ticket workflow E2E — requires a genuine Neon
+ * development branch (Neon Auth + Data API enabled) plus a real employee
+ * test account (the same E2E_EMPLOYEE_EMAIL/E2E_EMPLOYEE_PASSWORD used by
+ * auth.spec.ts). Never run against production.
  *
  * All ticket data created here is prefixed `E2E:` so it can be found and
  * removed manually later — this suite never wipes the database itself and
@@ -18,11 +18,12 @@ const EMPLOYEE_PASSWORD = process.env.E2E_EMPLOYEE_PASSWORD;
 
 const HAS_CREDENTIALS = Boolean(EMPLOYEE_EMAIL && EMPLOYEE_PASSWORD);
 
-test.describe("real Supabase employee ticket workflow", () => {
+test.describe("real Neon employee ticket workflow", () => {
   test.skip(
     !HAS_CREDENTIALS,
     "E2E_EMPLOYEE_EMAIL / E2E_EMPLOYEE_PASSWORD are not set — these tests require a real " +
-      "development Supabase project and a real employee test account, see README.md."
+      "Neon development branch (Neon Auth + Data API enabled) and a real employee test account, " +
+      "see README.md."
   );
 
   test.beforeEach(async ({ page }) => {

@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { createClient } from "@/lib/supabase/server";
+import { createDataApiClient } from "@/lib/neon/data-api";
 import { requireEmployee } from "@/features/auth/server/require-employee";
 import { createTicketSchema } from "@/features/tickets/schemas/create-ticket";
 import { getTicketErrorMessage } from "@/features/tickets/utils/error-messages";
@@ -15,11 +15,12 @@ export type CreateTicketActionResult = {
 };
 
 /**
- * Creates a ticket exclusively through `public.create_ticket` — never a
- * direct `.insert()`. Re-validates the FormData with the same Zod schema
- * the client used (the client's own validation is not trusted) and never
- * accepts author_id/public_number/status/assignee_id/created_at from the
- * form; those fields don't even exist in `createTicketSchema`.
+ * Creates a ticket exclusively through `public.create_ticket` (called via
+ * the Neon Data API's RPC endpoint) — never a direct `.insert()`.
+ * Re-validates the FormData with the same Zod schema the client used (the
+ * client's own validation is not trusted) and never accepts
+ * author_id/public_number/status/assignee_id/created_at from the form;
+ * those fields don't even exist in `createTicketSchema`.
  *
  * On success this redirects (throws) and never returns a value; it only
  * returns `{ error }` for the form to display.
@@ -38,8 +39,8 @@ export async function createTicketAction(formData: FormData): Promise<CreateTick
     return { error: getTicketErrorMessage("create") };
   }
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("create_ticket", {
+  const client = createDataApiClient();
+  const { data, error } = await client.rpc("create_ticket", {
     p_title: parsed.data.title,
     p_description: parsed.data.description,
     p_category: parsed.data.category,

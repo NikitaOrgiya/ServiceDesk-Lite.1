@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createClient } from "@/lib/supabase/server";
+import { auth } from "@/lib/auth/server";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 
@@ -10,18 +10,13 @@ export type CurrentUser = {
 };
 
 /**
- * Resolves the caller's identity via `getClaims()`, which verifies the JWT
- * (against the project's JWKS, or the Auth server if needed) rather than
- * merely decoding whatever the `session` cookie happens to contain.
- * `supabase.auth.getSession()` is never used for this — it can return a
- * locally-cached session without confirming it's still valid server-side.
- *
- * Returns only the minimum needed to look up a profile — never the access
- * or refresh token, and never logged.
+ * Resolves the caller's identity via Neon Auth's `auth.getSession()`,
+ * which validates the session cookie against the Neon Auth server rather
+ * than merely decoding it. Returns only the minimum needed to look up a
+ * profile — never the raw session/JWT, and never logged.
  */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.getClaims();
+  const { data, error } = await auth.getSession();
 
   if (error) {
     const sanitized = sanitizeError(error);
@@ -33,16 +28,9 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     return null;
   }
 
-  if (!data) {
+  if (!data?.user) {
     return null;
   }
 
-  const sub = data.claims.sub;
-  if (typeof sub !== "string" || sub.length === 0) {
-    return null;
-  }
-
-  const email = typeof data.claims.email === "string" ? data.claims.email : null;
-
-  return { id: sub, email };
+  return { id: data.user.id, email: data.user.email ?? null };
 }

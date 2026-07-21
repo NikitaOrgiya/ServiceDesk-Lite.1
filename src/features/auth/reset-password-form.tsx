@@ -19,7 +19,11 @@ import {
 import { newPasswordSchema, type NewPasswordValues } from "@/features/auth/schema";
 import { updatePasswordAction } from "@/features/auth/actions/update-password";
 
-export function ResetPasswordForm() {
+type ResetPasswordFormProps = {
+  token: string;
+};
+
+export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -32,7 +36,7 @@ export function ResetPasswordForm() {
     setFormError(null);
     startTransition(async () => {
       // On success, updatePasswordAction redirects server-side.
-      const result = await updatePasswordAction(values);
+      const result = await updatePasswordAction(values, token);
       if (result?.error) {
         setFormError(result.error);
       }
