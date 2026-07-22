@@ -78,6 +78,13 @@
       "when": 1784481987657,
       "tag": "0010_profile_provisioning",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784482000000,
+      "tag": "0011_invite_only_profile_provisioning",
+      "breakpoints": true
     }
   ]
 }

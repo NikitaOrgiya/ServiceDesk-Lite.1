@@ -52,7 +52,7 @@ export async function loginAction(input: unknown, next?: string | null): Promise
     return { error: GENERIC_LOGIN_ERROR };
   }
 
-  await ensureProfileForCurrentUser(data.user.name ?? null);
+  await ensureProfileForCurrentUser();
 
   const profile = await getCurrentProfile();
 
