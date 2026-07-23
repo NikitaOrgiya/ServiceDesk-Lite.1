@@ -4,9 +4,6 @@ import { redirect } from "next/navigation";
 
 import { auth } from "@/lib/auth/server";
 import { loginFormSchema } from "@/features/auth/schema";
-import { ensureProfileForCurrentUser } from "@/features/auth/server/ensure-profile";
-import { getCurrentProfile } from "@/features/auth/server/get-current-profile";
-import { redirectByRole } from "@/features/auth/server/redirect-by-role";
 import { sanitizeNextPath } from "@/features/auth/redirect";
 import { maskEmail } from "@/features/auth/mask-email";
 import { logger } from "@/lib/logger/logger";
@@ -20,15 +17,25 @@ const GENERIC_LOGIN_ERROR = "Не удалось войти. Проверьте 
 
 /**
  * Server Action backing the login form. Re-validates with the same Zod
- * schema the client used (never trusts client-side validation alone), uses
- * Neon Auth's `auth.signIn.email`, provisions the caller's `profiles` row
- * if this is their first sign-in (see ensureProfileForCurrentUser), then
- * loads the profile from `public.profiles` to decide where to send the
- * user — never from the login form or a cookie.
+ * schema the client used (never trusts client-side validation alone) and
+ * calls Neon Auth's `auth.signIn.email` — nothing else.
  *
- * On success this redirects (via `redirectByRole`/`redirect`, which throw)
- * and never returns. It only returns a value on failure, for the form to
- * display.
+ * Deliberately does NOT provision the profile or load it here: the
+ * session cookie `signIn.email` sets on this response is not yet the
+ * *incoming* cookie of this same request/action invocation, so a
+ * same-request call to `auth.token()` (which ensureProfileForCurrentUser/
+ * getCurrentProfile both need, via getUserAccessToken()) can resolve no
+ * session and silently run the Data API call unauthenticated. This is
+ * exactly the bug that shipped to production: a real session got created,
+ * but the invite-only `ensure_profile()` RPC never actually ran against
+ * it, so the invitation stayed unused and no profile was created — see
+ * src/app/auth/complete/route.ts, which performs provisioning on the
+ * *next* HTTP request, once the browser has actually resent the new
+ * session cookie.
+ *
+ * On success this redirects (via `redirect`, which throws) to the
+ * completion route and never returns a value. It only returns a value on
+ * failure, for the form to display.
  */
 export async function loginAction(input: unknown, next?: string | null): Promise<LoginActionResult> {
   const parsed = loginFormSchema.safeParse(input);
@@ -52,27 +59,15 @@ export async function loginAction(input: unknown, next?: string | null): Promise
     return { error: GENERIC_LOGIN_ERROR };
   }
 
-  await ensureProfileForCurrentUser();
+  logger.info({
+    event: "auth:login_succeeded_pending_completion",
+    message: "Sign-in succeeded; profile provisioning deferred to the completion route on the next request",
+  });
 
-  const profile = await getCurrentProfile();
+  const sanitizedNext = sanitizeNextPath(next);
+  const completionUrl = sanitizedNext
+    ? `/auth/complete?next=${encodeURIComponent(sanitizedNext)}`
+    : "/auth/complete";
 
-  if (!profile) {
-    logger.warn({
-      event: "auth:profile_missing",
-      message: "Login succeeded but the account has no profile row",
-    });
-    await auth.signOut();
-    redirect("/unauthorized");
-  }
-
-  if (!profile.isActive) {
-    logger.warn({
-      event: "auth:inactive_profile",
-      message: "Inactive profile attempted to log in",
-    });
-    await auth.signOut();
-    redirect("/unauthorized");
-  }
-
-  redirectByRole(profile.role, sanitizeNextPath(next));
+  redirect(completionUrl);
 }
