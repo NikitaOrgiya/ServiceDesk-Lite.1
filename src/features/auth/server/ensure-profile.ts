@@ -2,7 +2,7 @@ import "server-only";
 
 import { createDataApiClient } from "@/lib/neon/data-api";
 import { logger } from "@/lib/logger/logger";
-import { sanitizeError } from "@/lib/logger/sanitize-error";
+import { sanitizeError, isAuthRequiredError } from "@/lib/logger/sanitize-error";
 
 /**
  * Idempotently provisions the caller's own `public.profiles` row on first
@@ -10,7 +10,7 @@ import { sanitizeError } from "@/lib/logger/sanitize-error";
  * drizzle/0011_invite_only_profile_provisioning.sql). Neon has no
  * documented `auth.users`-equivalent trigger point, so this replaces the
  * Supabase prototype's `handle_new_user()` trigger — called once, right
- * after a successful sign-in (see actions/login.ts).
+ * after a successful sign-in (see src/app/auth/login/route.ts).
  *
  * Invite-only: the RPC resolves the caller's email itself from the
  * trusted `neon_auth.user` table and only provisions a row if an unused
@@ -23,7 +23,24 @@ import { sanitizeError } from "@/lib/logger/sanitize-error";
  */
 export async function ensureProfileForCurrentUser(): Promise<boolean> {
   const client = createDataApiClient();
-  const { error } = await client.rpc("ensure_profile");
+
+  let error: unknown;
+  try {
+    ({ error } = await client.rpc("ensure_profile"));
+  } catch (thrown) {
+    // Same pending-token condition as getCurrentProfile() (see the comment
+    // there) — the Data API's fetch wrapper throws rather than returning
+    // `{ error }` when no access token is resolvable yet for this request.
+    // Treat it as provisioning-not-yet-possible, not an unhandled crash.
+    if (isAuthRequiredError(thrown)) {
+      logger.warn({
+        event: "auth:profile_provisioning_pending_session",
+        message: "No access token resolvable yet for this request; provisioning deferred",
+      });
+      return false;
+    }
+    throw thrown;
+  }
 
   if (error) {
     const sanitized = sanitizeError(error);

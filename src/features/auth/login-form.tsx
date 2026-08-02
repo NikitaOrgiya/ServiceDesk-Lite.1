@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,45 +18,54 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { loginFormSchema, type LoginFormValues } from "@/features/auth/schema";
-import { loginAction } from "@/features/auth/actions/login";
 
 type LoginFormProps = {
   next?: string;
+  hasError?: boolean;
 };
 
-export function LoginForm({ next }: LoginFormProps) {
-  const [formError, setFormError] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
+const GENERIC_LOGIN_ERROR_MESSAGE = "Не удалось войти. Проверьте email и пароль.";
 
+/**
+ * Submits with a real, uninterrupted browser POST to `/auth/login` (see
+ * src/app/auth/login/route.ts) — react-hook-form is used only to gate the
+ * submit client-side (block it and show field errors when invalid), never
+ * to transmit it. The password is never handed to `fetch`, `XMLHttpRequest`,
+ * or a Server Action; it only ever travels in the body of the form's own
+ * native POST.
+ */
+export function LoginForm({ next, hasError }: LoginFormProps) {
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: { email: "", password: "" },
   });
 
-  function onSubmit(values: LoginFormValues) {
-    setFormError(null);
-    startTransition(async () => {
-      // On success, loginAction redirects server-side and this promise
-      // never resolves with a value — it only returns on failure.
-      const result = await loginAction(values, next);
-      if (result?.error) {
-        setFormError(result.error);
-      }
-    });
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    const result = loginFormSchema.safeParse(form.getValues());
+    if (!result.success) {
+      event.preventDefault();
+      void form.trigger();
+    }
+    // On success, this handler does nothing further and the native form
+    // submission proceeds to the server unmodified.
   }
 
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        method="post"
+        action="/auth/login"
+        onSubmit={handleSubmit}
         className="flex flex-col gap-4"
         noValidate
       >
-        {formError ? (
+        {next ? <input type="hidden" name="next" value={next} /> : null}
+
+        {hasError ? (
           <Alert variant="destructive">
             <AlertCircle />
             <AlertTitle>Не удалось войти</AlertTitle>
-            <AlertDescription>{formError}</AlertDescription>
+            <AlertDescription>{GENERIC_LOGIN_ERROR_MESSAGE}</AlertDescription>
           </Alert>
         ) : null}
 
@@ -71,7 +80,6 @@ export function LoginForm({ next }: LoginFormProps) {
                   type="email"
                   placeholder="name@company.com"
                   autoComplete="email"
-                  disabled={isPending}
                   {...field}
                 />
               </FormControl>
@@ -87,12 +95,7 @@ export function LoginForm({ next }: LoginFormProps) {
             <FormItem>
               <FormLabel>Пароль</FormLabel>
               <FormControl>
-                <Input
-                  type="password"
-                  autoComplete="current-password"
-                  disabled={isPending}
-                  {...field}
-                />
+                <Input type="password" autoComplete="current-password" {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -108,8 +111,8 @@ export function LoginForm({ next }: LoginFormProps) {
           </Link>
         </div>
 
-        <Button type="submit" className="w-full" disabled={isPending}>
-          {isPending ? "Выполняется вход…" : "Войти"}
+        <Button type="submit" className="w-full">
+          Войти
         </Button>
       </form>
     </Form>

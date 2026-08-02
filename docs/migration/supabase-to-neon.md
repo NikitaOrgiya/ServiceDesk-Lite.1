@@ -29,8 +29,8 @@ the concrete Neon replacement and migration status.
 | Proxy session refresh (`updateSession`) | `src/lib/supabase/proxy.ts` | `auth.middleware()` from `@neondatabase/auth/next/server`, wired in `src/proxy.ts` | Replaced |
 | `supabase.auth.getClaims()` identity check | `src/features/auth/server/get-current-user.ts` | `auth.getSession()` (Neon Auth server SDK) | Replaced |
 | `supabase.from("profiles")` profile lookup | `src/features/auth/server/get-current-profile.ts` | Data API `client.from("profiles").select(...)` under RLS | Replaced |
-| `supabase.auth.signInWithPassword` | `src/features/auth/actions/login.ts` | `authClient.signIn.email()` (Neon Auth) | Replaced |
-| `supabase.auth.signOut` | `src/features/auth/actions/logout.ts` | `auth.signOut()` (Neon Auth) | Replaced |
+| `supabase.auth.signInWithPassword` | `src/app/auth/login/route.ts` | `authClient.signIn.email()` (Neon Auth) | Replaced |
+| `supabase.auth.signOut` | `src/app/auth/logout/route.ts` | `auth.signOut()` (Neon Auth) | Replaced |
 | `supabase.auth.resetPasswordForEmail` | `src/features/auth/actions/request-password-reset.ts` | Neon Auth password-reset flow if/when supported by the installed SDK version — see Auth section of README for the verified status | Adapted (residual risk documented) |
 | `supabase.auth.updateUser({ password })` | `src/features/auth/actions/update-password.ts` | Neon Auth equivalent, same caveat as above | Adapted (residual risk documented) |
 | `/auth/callback` PKCE code exchange route | `src/app/auth/callback/route.ts` | `app/api/auth/[...path]/route.ts` (`auth.handler()`) | Replaced |

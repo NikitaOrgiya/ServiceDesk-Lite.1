@@ -14,7 +14,7 @@ import { logger } from "@/lib/logger/logger";
 export const dynamic = "force-dynamic";
 
 /**
- * Second half of the login flow (see src/features/auth/actions/login.ts
+ * Second half of the login flow (see src/app/auth/login/route.ts
  * for why this is a separate request instead of being inlined into the
  * sign-in Server Action). The browser is redirected here immediately
  * after a successful `auth.signIn.email()`, so by the time this GET
@@ -39,15 +39,16 @@ export async function GET(request: NextRequest) {
       event: "auth:completion_session_missing",
       message: "Completion route reached with no resolvable session",
     });
-    return NextResponse.redirect(loginUrl);
+    return NextResponse.redirect(loginUrl, 303);
   }
 
   const provisioned = await ensureProfileForCurrentUser();
   if (!provisioned) {
-    // ensureProfileForCurrentUser() already logged the sanitized RPC error
+    // ensureProfileForCurrentUser() already logged the sanitized failure
+    // (either an RPC-level error or a pending-session AuthRequiredError)
     // as auth:profile_provisioning_failed — never surface it to the user.
     await auth.signOut();
-    return NextResponse.redirect(unauthorizedUrl);
+    return NextResponse.redirect(unauthorizedUrl, 303);
   }
 
   const profile = await getCurrentProfile();
@@ -59,7 +60,7 @@ export async function GET(request: NextRequest) {
       message: "Provisioning reported success but no active profile is visible afterward",
     });
     await auth.signOut();
-    return NextResponse.redirect(unauthorizedUrl);
+    return NextResponse.redirect(unauthorizedUrl, 303);
   }
 
   logger.info({
@@ -70,5 +71,10 @@ export async function GET(request: NextRequest) {
   // decision.type === "allow" implies profile is non-null (see
   // decideUserAccess: "allow" is only reachable when profile is truthy).
   const target = resolveRedirectTarget((profile as CurrentProfile).role, next);
-  return NextResponse.redirect(new URL(target, request.url));
+  // Explicit 303: this response must always be re-fetched as a plain GET
+  // navigation by the browser (never resolved as an RSC seed for a
+  // client-dispatched request), so a stale client-router canonicalUrl from
+  // a prior Server Action can never carry over into this navigation — see
+  // src/app/auth/logout/route.ts for the failure mode this forecloses.
+  return NextResponse.redirect(new URL(target, request.url), 303);
 }

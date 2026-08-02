@@ -16,7 +16,7 @@ import { expect, test } from "@playwright/test";
  * profile, /unauthorized): `login()` below drives a *real browser*
  * through the login form, so the assertions after it only pass once the
  * browser has actually followed every server redirect (including the
- * `/auth/complete` hop — see src/features/auth/actions/login.ts and
+ * `/auth/complete` hop — see src/app/auth/login/route.ts and
  * src/app/auth/complete/route.ts) and resent its cookies — unlike
  * scripts/e2e-neon-auth.ts, which talks to Neon Auth's raw HTTP API
  * directly and mints its own JWT via a separate `/token` fetch, so it can

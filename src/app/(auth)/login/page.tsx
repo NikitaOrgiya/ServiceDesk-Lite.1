@@ -14,11 +14,11 @@ import { redirectByRole } from "@/features/auth/server/redirect-by-role";
 import { sanitizeNextPath } from "@/features/auth/redirect";
 
 type LoginPageProps = {
-  searchParams: Promise<{ next?: string }>;
+  searchParams: Promise<{ next?: string; error?: string }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const { next } = await searchParams;
+  const { next, error } = await searchParams;
   const sanitizedNext = sanitizeNextPath(next) ?? undefined;
 
   // An already-authenticated, active user opening /login goes straight to
@@ -44,7 +44,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <LoginForm next={sanitizedNext} />
+          <LoginForm next={sanitizedNext} hasError={Boolean(error)} />
         </CardContent>
       </Card>
     </div>
