@@ -13,6 +13,7 @@ export const AUTH_LOG_EVENTS = [
   "auth:profile_lookup_pending_session",
   "auth:profile_provisioning_failed",
   "auth:profile_provisioning_pending_session",
+  "auth:profile_provisioning_retry",
   "auth:profile_missing",
   "auth:inactive_profile",
   "auth:password_reset_request_failed",
