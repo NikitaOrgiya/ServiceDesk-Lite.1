@@ -5,6 +5,25 @@ import { sanitizeNextPath } from "@/features/auth/redirect";
 
 const neonAuthMiddleware = auth.middleware({ loginUrl: "/login" });
 
+// Next.js's own signal that a request is a Server Action invocation (either
+// a directly-invoked action reference, as used by e.g.
+// src/features/tickets/components/new-ticket-form.tsx, or a
+// progressively-enhanced native <form action={...}> submission) rather than
+// an ordinary page navigation — see
+// node_modules/next/dist/client/components/app-router-headers.js's
+// `ACTION_HEADER` constant and
+// node_modules/next/dist/server/lib/server-action-request-meta.js's
+// `getServerActionRequestMetadata()`, which is what Next.js's own
+// action-handler uses to route a request to the action runtime. Confirmed
+// by inspecting a real request from NewTicketForm in this codebase: it is a
+// POST with this exact header present, body-encoded as
+// `multipart/form-data` when the argument is a FormData object.
+const NEXT_ACTION_HEADER = "next-action";
+
+function isServerActionRequest(request: NextRequest): boolean {
+  return request.method === "POST" && request.headers.has(NEXT_ACTION_HEADER);
+}
+
 /**
  * Runs ahead of every request under /app/** and /admin/** (see `matcher`
  * below). Neon Auth's own middleware refreshes/validates the session
@@ -32,8 +51,28 @@ const neonAuthMiddleware = auth.middleware({ loginUrl: "/login" });
  * does not replace requireEmployee()/requireAdmin(), which re-verify
  * identity and role from the database on every request to those sections
  * (see src/app/app/layout.tsx / src/app/admin/layout.tsx).
+ *
+ * Confirmed Server Action POST requests (see isServerActionRequest above)
+ * skip Neon Auth's own middleware entirely here. This is NOT a general POST
+ * bypass and does NOT weaken authorization: it exists because Neon Auth's
+ * middleware performs its own upstream session round trip, which was
+ * observed (see the Server Action-vs-GET investigation this fix addresses)
+ * to intermittently redirect an otherwise-valid, cookie-bearing Server
+ * Action POST to /login even though the exact same session succeeds for a
+ * GET moments earlier — breaking the Next.js action runtime on the client
+ * (surfacing as a generic error overlay) before the action itself ever
+ * runs. It is safe only because every business Server Action under
+ * /app/** and /admin/** independently calls requireEmployee()/
+ * requireAdmin() (see src/features/auth/server/require-employee.ts /
+ * require-admin.ts) before reading or mutating any data — this bypass
+ * changes only which layer performs that check for this one request shape,
+ * never whether it is performed.
  */
 export default async function proxy(request: NextRequest) {
+  if (isServerActionRequest(request)) {
+    return NextResponse.next();
+  }
+
   const response = await neonAuthMiddleware(request);
 
   const location = response.headers.get("location");
