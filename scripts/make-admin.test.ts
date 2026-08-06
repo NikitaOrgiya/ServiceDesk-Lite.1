@@ -240,4 +240,231 @@ describe("make-admin main()", () => {
     await expect(main()).rejects.toThrow();
     expect(end).toHaveBeenCalledTimes(1);
   });
+
+  it("successful production dry-run reports its summary and never prompts or mutates", async () => {
+    setEnv(FULL_ENV);
+    mockBranch({ default: true, name: "production" });
+    query.mockResolvedValueOnce({ rows: [{ role: "employee" }] });
+    setArgs(["--env=production", "--user-id=abc", "--dry-run"]);
+
+    await main();
+
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(question).not.toHaveBeenCalled();
+    const printed = logSpy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(printed).toMatch(/required/);
+  });
+
+  it("interactive production confirmation succeeds with the exact production phrase", async () => {
+    setEnv(FULL_ENV);
+    mockBranch({ default: true, name: "production" });
+    query.mockResolvedValueOnce({ rows: [{ role: "employee" }] }).mockResolvedValueOnce({ rows: [{}] });
+    questionAnswer = "PROMOTE PRODUCTION ADMIN";
+    setArgs(["--env=production", "--user-id=abc"]);
+
+    await main();
+
+    expect(query).toHaveBeenCalledTimes(2);
+    expect(String(query.mock.calls[1][0])).toMatch(/set_profile_role/);
+    const printed = logSpy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(printed).toMatch(/promoted/i);
+  });
+
+  it("readline is created and closed exactly once for a single interactive confirmation", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockResolvedValueOnce({ rows: [{ role: "employee" }] }).mockResolvedValueOnce({ rows: [{}] });
+    questionAnswer = "PROMOTE DEVELOPMENT ADMIN";
+    setArgs(["--env=development", "--user-id=abc"]);
+
+    await main();
+
+    expect(question).toHaveBeenCalledTimes(1);
+    expect(closeInterface).toHaveBeenCalledTimes(1);
+  });
+
+  it("readline still closes exactly once when the typed phrase is wrong", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockResolvedValueOnce({ rows: [{ role: "employee" }] });
+    questionAnswer = "nope";
+    setArgs(["--env=development", "--user-id=abc"]);
+
+    await expect(main()).rejects.toThrow();
+
+    expect(closeInterface).toHaveBeenCalledTimes(1);
+  });
+
+  it("client.end() runs exactly once on the success path and completes before main() resolves", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockResolvedValueOnce({ rows: [{ role: "admin" }] });
+    setArgs(["--env=development", "--user-id=abc"]);
+
+    let endResolved = false;
+    end.mockImplementationOnce(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      endResolved = true;
+    });
+
+    await main();
+
+    expect(end).toHaveBeenCalledTimes(1);
+    expect(endResolved).toBe(true);
+  });
+
+  it("a cleanup-stage failure after a successful mutation is reported as a warning, not as main() rejecting", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockResolvedValueOnce({ rows: [{ role: "employee" }] }).mockResolvedValueOnce({ rows: [{}] });
+    questionAnswer = "PROMOTE DEVELOPMENT ADMIN";
+    setArgs(["--env=development", "--user-id=abc"]);
+    end.mockRejectedValueOnce(
+      Object.assign(new Error('Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c'), {})
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(main()).resolves.toBeUndefined();
+
+    const printed = logSpy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(printed).toMatch(/promoted/i);
+    const printedErr = errorSpy.mock.calls.map((c: unknown[]) => c.join(" ")).join("\n");
+    expect(printedErr).toMatch(/cleanup-failed/);
+    expect(printedErr).not.toContain("UV_HANDLE_CLOSING");
+    errorSpy.mockRestore();
+  });
+
+  it("a cleanup-stage failure after a missing-profile error still surfaces the original error, not the cleanup one", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockResolvedValueOnce({ rows: [] });
+    setArgs(["--env=development", "--user-id=abc"]);
+    end.mockRejectedValueOnce(new Error("handle already closing"));
+
+    await expect(main()).rejects.toThrow(/no matching profile/i);
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("Management API failure is tagged with the branch-validation-failed stage", async () => {
+    setEnv(FULL_ENV);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("getaddrinfo ENOTFOUND console.neon.tech")));
+    setArgs(["--env=development", "--user-id=abc"]);
+
+    let caught: unknown;
+    try {
+      await main();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ stage: "branch-validation-failed" });
+    expect((caught as Error).message).not.toContain("ENOTFOUND");
+    expect(ClientMock).not.toHaveBeenCalled();
+  });
+
+  it("a database connect failure is tagged with the database-connect-failed stage", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    connect.mockRejectedValueOnce(Object.assign(new Error("connection to server at \"ep-secret-host.neon.tech\" failed"), { code: "ECONNREFUSED" }));
+    setArgs(["--env=development", "--user-id=abc"]);
+
+    let caught: unknown;
+    try {
+      await main();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ stage: "database-connect-failed" });
+    expect((caught as Error).message).not.toContain("ep-secret-host");
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("a profile lookup failure is tagged with the profile-lookup-failed stage", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockRejectedValueOnce(Object.assign(new Error("relation public.profiles does not exist"), { code: "42P01" }));
+    setArgs(["--env=development", "--user-id=abc"]);
+
+    let caught: unknown;
+    try {
+      await main();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ stage: "profile-lookup-failed" });
+    expect((caught as Error).message).toContain("42P01");
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("a mutation failure is tagged with the promotion-failed stage", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query
+      .mockResolvedValueOnce({ rows: [{ role: "employee" }] })
+      .mockRejectedValueOnce(Object.assign(new Error("deadlock detected for user abc-123"), { code: "40P01" }));
+    questionAnswer = "PROMOTE DEVELOPMENT ADMIN";
+    setArgs(["--env=development", "--user-id=abc-123"]);
+
+    let caught: unknown;
+    try {
+      await main();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ stage: "promotion-failed" });
+    expect((caught as Error).message).not.toContain("abc-123");
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("no unknown Error.message ever reaches stdout or stderr", async () => {
+    setEnv(FULL_ENV);
+    mockBranch();
+    query.mockRejectedValueOnce(new Error("super-secret-diagnostic-detail-should-never-print"));
+    setArgs(["--env=development", "--user-id=abc"]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await main();
+    } catch {
+      // formatFailureMessage(error) is what the real entrypoint prints on rejection.
+    }
+
+    const printedLog = logSpy.mock.calls.flat().map(String).join("\n");
+    const printedErr = errorSpy.mock.calls.flat().map(String).join("\n");
+    expect(printedLog).not.toContain("super-secret-diagnostic-detail-should-never-print");
+    expect(printedErr).not.toContain("super-secret-diagnostic-detail-should-never-print");
+    errorSpy.mockRestore();
+  });
+
+  it("simulated full Windows-terminal interactive flow closes readline and the client exactly once each", async () => {
+    setEnv(FULL_ENV);
+    mockBranch({ default: true, name: "production" });
+    query.mockResolvedValueOnce({ rows: [{ role: "employee" }] }).mockResolvedValueOnce({ rows: [{}] });
+    questionAnswer = "PROMOTE PRODUCTION ADMIN";
+    setArgs(["--env=production", "--user-id=abc"]);
+
+    await main();
+
+    expect(question).toHaveBeenCalledTimes(1);
+    expect(closeInterface).toHaveBeenCalledTimes(1);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(end).toHaveBeenCalledTimes(1);
+    expect(ClientMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("the real entrypoint never calls process.exit() (uses process.exitCode instead)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const source = fs.readFileSync(path.join(import.meta.dirname, "make-admin.ts"), "utf8");
+    // Strip /** ... */ block comments first — this file's own docstring
+    // explains, in prose, why `process.exit()` is no longer called, which
+    // would otherwise trip up a naive source-text search for the phrase.
+    const withoutBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(withoutBlockComments).not.toMatch(/\bprocess\.exit\(/);
+    expect(withoutBlockComments).toMatch(/process\.exitCode\s*=/);
+  });
 });
