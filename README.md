@@ -310,7 +310,8 @@ npm run dev
 
 Публичной регистрации нет. Development-only тестовые аккаунты (Employee A,
 Employee B, Admin) создаются и переиспользуются через live E2E-раннер —
-единственный проверенный provisioning-workflow в этом репозитории:
+единственный проверенный provisioning-workflow для disposable dev-данных в
+этом репозитории:
 
 ```bash
 E2E_EMPLOYEE_A_EMAIL=... E2E_EMPLOYEE_A_PASSWORD=... \
@@ -328,16 +329,86 @@ npm run test:e2e:neon
 доверенным cleanup в конце прогона; сами Auth-аккаунты и их профили
 намеренно сохраняются для повторного использования.
 
-Назначить admin существующему профилю по id отдельно (id — из Neon Console →
-Auth → Users, это приложение не читает внутреннюю таблицу пользователей Neon
-Auth напрямую) можно через operator-only скрипт, который сам проверяет, что
-подключён именно к `servicedesk-lite-dev`, и не выводит id/email в лог:
+### Production employee onboarding
 
-```bash
-npm run db:make-admin -- <neon-auth-user-id>
-```
+1. Создайте invitation (единственный способ дать `ensure_profile()` право
+   создать профиль для этого email — см. `drizzle/0011_invite_only_profile_
+   provisioning.sql`):
 
-Реальные email/пароли **никогда** не попадают в Git.
+   ```bash
+   npm run db:invite-user -- --env=production --email=<email> --name="<full name>"
+   ```
+
+   Скрипт сам проверяет через Neon Management API, что подключён именно к
+   default/production branch, и отказывается работать иначе.
+   `intended_role` всегда `employee` — `invite-user.ts` физически не может
+   выдать `admin` (нет флага `--role`).
+2. Создайте Auth-аккаунт **только** через утверждённый operator workflow
+   (Neon Console → Auth → Users → Invite/Create, либо иной согласованный
+   способ) для того же email.
+3. Пользователь сам устанавливает или сбрасывает пароль (сброс через email,
+   без ручной передачи пароля оператором).
+4. Первый успешный вход вызывает `ensure_profile()` (Data API,
+   `/auth/complete`), которая находит invitation по email и создаёт
+   `public.profiles` с ролью `employee`. Invitation помечается `is_used`.
+5. Проверьте, что employee login проходит и ведёт на `/app`.
+
+### Production admin onboarding
+
+1. Используйте **отдельный** email — не тот, что уже employee-профиль
+   (admin promotion работает поверх уже существующего профиля, создавать
+   для этого второй профиль на том же email нельзя).
+2. Пройдите Production employee onboarding (шаги 1–5 выше) для этого email.
+3. Скопируйте Neon Auth user id через Neon Console → Auth → Users (это
+   приложение не читает внутреннюю таблицу пользователей Neon Auth
+   напрямую — id берётся только оттуда).
+4. Сначала выполните dry-run — он ничего не меняет, только проверяет ветку
+   и текущее состояние профиля:
+
+   ```bash
+   npm run db:make-admin -- --env=production --user-id=<id> --dry-run
+   ```
+
+5. Затем выполните реальное повышение. Потребуется вручную ввести точную
+   фразу подтверждения (`PROMOTE PRODUCTION ADMIN` для production,
+   `PROMOTE DEVELOPMENT ADMIN` для development) — иначе операция
+   отменяется без изменений:
+
+   ```bash
+   npm run db:make-admin -- --env=production --user-id=<id>
+   ```
+
+6. Войдите заново под этим пользователем и проверьте, что вход ведёт точно
+   на `/admin`.
+
+Оба скрипта — operator-only, требуют прямую `DATABASE_MIGRATION_URL`-сессию
+(никакого fallback на `DATABASE_URL`), сами проверяют целевую ветку через
+Neon Management API перед любой mutation и никогда не печатают id, email,
+connection string или иные секреты в stdout/stderr — только generic
+success/failure/dry-run-сводки.
+
+**Важно:**
+
+- **Не используйте** Neon Auth "Make admin" в консоли — это внутренняя роль
+  Better Auth, не имеющая отношения к `public.profiles.role`, единственному
+  источнику правды о роли в приложении.
+- **Не меняйте** `public.profiles.role` вручную (SQL UPDATE и т.п.) — только
+  через `private.set_profile_role()` (см. `drizzle/0008_admin_bootstrap_
+  hardening.sql`), которая независимо проверяет `current_user` и не
+  выполнима через Data API.
+- **Не используйте** Preview-окружение/credentials в Production.
+- `db:make-admin` **не создаёт** Auth-пользователя — только повышает уже
+  существующий профиль.
+- `db:invite-user` **всегда** создаёт `employee`-приглашение — grant admin
+  этим скриптом невозможен ни при каких аргументах.
+- Повышение до admin возможно только **после** успешного первого входа и
+  появления строки в `public.profiles` — до этого `private.set_profile_
+  role()` вернёт ошибку "no matching profile" и ничего не изменит.
+- `npm run db:make-admin -- --env=production ...` (без `--dry-run`) — это
+  реальная mutation в Production. Выполняется оператором один раз, после
+  явной проверки target branch (что скрипт делает сам) и после `--dry-run`.
+
+Реальные email/пароли/id **никогда** не попадают в Git.
 
 ## 17. Тесты
 
@@ -372,7 +443,8 @@ npm run test:e2e:neon     # real Neon Auth sign-in + Data API RPC/RLS E2E — ne
 | `neon/tests/security_assertions.sql` | ✅ passed на том же локальном PostgreSQL 16 |
 | `neon/tests/functional_checks.sql` | ✅ passed (после исправления реальной ошибки, найденной при запуске — см. ниже) |
 | `neon/tests/admin_bootstrap_checks.sql` | ✅ passed |
-| `scripts/*.ts` (migrate/check-neon-connection/create-demo-users/make-admin) | Только `tsc --noEmit` — не выполнялись против реального Neon (нужен либо реальный Neon endpoint, либо `wsProxy` для `@neondatabase/serverless` против локального Postgres, что не настраивалось) |
+| `scripts/*.ts` (migrate/check-neon-connection/create-demo-users) | Только `tsc --noEmit` — не выполнялись против реального Neon (нужен либо реальный Neon endpoint, либо `wsProxy` для `@neondatabase/serverless` против локального Postgres, что не настраивалось) |
+| `scripts/make-admin.ts` | `tsc --noEmit` + полное unit-покрытие (`scripts/lib/make-admin-core.test.ts`, `scripts/make-admin.test.ts`) через fakes/mocks — против реального Neon не выполнялся |
 
 При запуске smoke-тестов против настоящего `npm run dev` (без реального Neon —
 только placeholder-env) обнаружился и был исправлен реальный regression:
