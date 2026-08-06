@@ -5,7 +5,7 @@ import { createDataApiClient } from "@/lib/neon/data-api";
 import { getCurrentUser } from "@/features/auth/server/get-current-user";
 import { USER_ROLES } from "@/features/auth/roles";
 import { logger } from "@/lib/logger/logger";
-import { sanitizeError } from "@/lib/logger/sanitize-error";
+import { sanitizeError, isAuthRequiredError } from "@/lib/logger/sanitize-error";
 
 // Runtime boundary validation for the raw Data API row — see the same note
 // in src/db/types.ts about not conflating Drizzle's own inferred types
@@ -40,11 +40,32 @@ export async function getCurrentProfile(): Promise<CurrentProfile | null> {
   }
 
   const client = createDataApiClient();
-  const { data, error } = await client
-    .from("profiles")
-    .select("id, full_name, role, department, is_active")
-    .eq("id", user.id)
-    .maybeSingle();
+
+  let data: unknown;
+  let error: unknown;
+  try {
+    ({ data, error } = await client
+      .from("profiles")
+      .select("id, full_name, role, department, is_active")
+      .eq("id", user.id)
+      .maybeSingle());
+  } catch (thrown) {
+    // A session cookie can resolve via getCurrentUser() (auth.getSession())
+    // on this same request while the separate auth.token() call the Data
+    // API needs has not (or no longer) resolves a token — most visibly on
+    // /login, which calls getCurrentProfile() speculatively to redirect an
+    // already-signed-in visitor. Expected/benign: treat exactly like "no
+    // profile", not an unhandled crash. Anything else thrown is not this
+    // known condition and must not be hidden.
+    if (isAuthRequiredError(thrown)) {
+      logger.warn({
+        event: "auth:profile_lookup_pending_session",
+        message: "No access token resolvable yet for this request; treating as unauthenticated",
+      });
+      return null;
+    }
+    throw thrown;
+  }
 
   if (error) {
     const sanitized = sanitizeError(error);

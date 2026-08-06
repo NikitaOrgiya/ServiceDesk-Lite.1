@@ -16,7 +16,6 @@ import { siteConfig } from "@/config/site";
 import type { NavSection } from "@/config/navigation";
 import { formatRole } from "@/features/auth/roles";
 import type { ProfileViewModel } from "@/features/auth/profile-view-model";
-import { logoutAction } from "@/features/auth/actions/logout";
 
 type AppHeaderProps = {
   section: NavSection;
@@ -75,7 +74,7 @@ export function AppHeader({ section, navLabel, sectionTitle, profile }: AppHeade
               </span>
             </div>
           </div>
-          <form action={logoutAction}>
+          <form action="/auth/logout" method="post">
             <Button type="submit" variant="outline" size="sm">
               <LogOut className="size-4" />
               <span className="hidden sm:inline">Выйти</span>

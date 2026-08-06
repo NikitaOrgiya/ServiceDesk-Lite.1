@@ -62,7 +62,7 @@ test.describe("real Neon employee ticket workflow", () => {
     await page.waitForURL(/\/app\/tickets\/[0-9a-f-]{36}$/);
 
     await page.goto(`/app/tickets?q=${encodeURIComponent(title)}`);
-    await expect(page.getByText(title)).toBeVisible();
+    await expect(page.getByRole("cell", { name: title })).toBeVisible();
   });
 
   test("adds a comment to a ticket and sees it listed chronologically", async ({ page }) => {
@@ -97,7 +97,7 @@ test.describe("real Neon employee ticket workflow", () => {
     await page.getByRole("button", { name: "Отменить заявку" }).click();
     await page.getByRole("button", { name: "Да, отменить заявку" }).click();
 
-    await expect(page.getByText("Отменена")).toBeVisible();
+    await expect(page.getByText("Заявка отменена")).toBeVisible();
     await expect(page.getByRole("button", { name: "Отменить заявку" })).toHaveCount(0);
   });
 });

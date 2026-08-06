@@ -1,3 +1,5 @@
+import { AuthRequiredError } from "@neondatabase/postgrest-js";
+
 // Key=value / key: value style secrets — redact the key *and* its value.
 const KEY_VALUE_PATTERNS = [
   /access[_-]?token\s*[:=]\s*[^\s,;&]+/gi,
@@ -69,4 +71,18 @@ export function sanitizeError(error: unknown): SanitizedError {
   }
 
   return { message: "Unknown error" };
+}
+
+/**
+ * `@neondatabase/postgrest-js`'s `fetchWithToken` (see
+ * src/lib/neon/data-api.ts) throws this — a real, thrown exception, not
+ * the usual `{ data, error }` result shape — whenever the caller's access
+ * token can't be resolved for a given request (e.g. `auth.token()` racing
+ * a just-issued session cookie, or a genuinely expired/absent session).
+ * Every Data API call site must treat it as an expected "no session (yet)"
+ * condition rather than an unhandled crash, without swallowing any other,
+ * truly unexpected thrown error.
+ */
+export function isAuthRequiredError(error: unknown): boolean {
+  return error instanceof AuthRequiredError;
 }

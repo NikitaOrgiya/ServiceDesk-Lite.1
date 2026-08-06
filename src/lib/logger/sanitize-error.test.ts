@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { AuthRequiredError } from "@neondatabase/postgrest-js";
 
-import { sanitizeError } from "@/lib/logger/sanitize-error";
+import { sanitizeError, isAuthRequiredError } from "@/lib/logger/sanitize-error";
 
 // Mirrors the shape of Neon Auth's server API error
 // (NeonAuthServerApiError: message/status/statusText/code) without
@@ -101,5 +102,21 @@ describe("sanitizeError", () => {
     expect(result).not.toBe(original);
     expect(result.message).not.toContain("abc123.def456.ghi789");
     expect(JSON.stringify(result)).not.toContain("abc123");
+  });
+});
+
+describe("isAuthRequiredError", () => {
+  it("recognizes the Data API client's own AuthRequiredError", () => {
+    expect(isAuthRequiredError(new AuthRequiredError())).toBe(true);
+  });
+
+  it("does not misclassify an ordinary Error with a similar message", () => {
+    expect(isAuthRequiredError(new Error("Authentication required"))).toBe(false);
+  });
+
+  it("does not misclassify a plain object or non-error value", () => {
+    expect(isAuthRequiredError({ message: "Authentication required" })).toBe(false);
+    expect(isAuthRequiredError(null)).toBe(false);
+    expect(isAuthRequiredError(undefined)).toBe(false);
   });
 });
