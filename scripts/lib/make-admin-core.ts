@@ -9,16 +9,60 @@
  * email, DATABASE_MIGRATION_URL, or an API key in a way that ends up in a
  * thrown message: every OperatorError below is a fixed, hand-authored,
  * PII-free string. The one place raw input *could* leak — an unexpected
- * driver/network error thrown by the real `pg`/`fetch` client, which can
- * embed a hostname or the interpolated id from a Postgres RAISE EXCEPTION
- * message — is handled by the caller (scripts/make-admin.ts), which only
- * ever prints such errors' SQLSTATE `code`, never `.message`.
+ * driver/network error thrown by the real `pg`/`fetch`/`ws` client, which
+ * can embed a hostname or the interpolated id from a Postgres RAISE
+ * EXCEPTION message — is handled by toSafeStageError() below: it discards
+ * `.message` entirely for anything that isn't already one of our own
+ * OperatorErrors, keeping only the safe SQLSTATE `code` (if any) and a
+ * caller-supplied stage tag.
  */
 
 export type Env = "development" | "production";
 
+/**
+ * The technical stage a failure happened in — never derived from, and
+ * never containing, the original error's message or any operator-supplied
+ * value. Exists so an operator can tell "the Management API call failed"
+ * apart from "the mutation itself failed" without needing (or risking) any
+ * raw error detail.
+ */
+export type Stage =
+  | "branch-validation-failed"
+  | "database-connect-failed"
+  | "profile-lookup-failed"
+  | "confirmation-failed"
+  | "promotion-failed"
+  | "cleanup-failed";
+
 /** Thrown only for conditions this module authored itself — see file header. */
-export class OperatorError extends Error {}
+export class OperatorError extends Error {
+  readonly stage?: Stage;
+
+  constructor(message: string, stage?: Stage) {
+    super(message);
+    this.stage = stage;
+  }
+}
+
+/**
+ * Normalizes any caught error into a safe OperatorError tagged with the
+ * given stage. An error that is already one of our own OperatorErrors is
+ * returned unchanged — it was authored by this module and is safe (and
+ * usually more specific) already; re-tagging it here would only lose
+ * information. Anything else (a real pg/ws/fetch driver error) is reduced
+ * to a generic message plus its bare SQLSTATE `code` if present — never
+ * `.message`, which can embed a hostname (connection errors) or the
+ * interpolated user id from a Postgres RAISE EXCEPTION (see
+ * private.set_profile_role's "No profiles row for id %").
+ */
+export function toSafeStageError(stage: Stage, error: unknown): OperatorError {
+  if (error instanceof OperatorError) {
+    return error;
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  const codeSuffix = typeof code === "string" && code.length > 0 ? ` (${code})` : "";
+  return new OperatorError(`operation failed${codeSuffix}.`, stage);
+}
 
 export type ParsedArgs = {
   env: Env;
@@ -96,7 +140,9 @@ export type BranchInfo = { name?: string; default: boolean };
 /**
  * Fetches only what's needed to validate the target — never logged or
  * returned beyond this shape. `fetchImpl` is injected so tests never hit
- * the real Neon Management API.
+ * the real Neon Management API. Network-level failures (DNS, TLS, a
+ * rejected promise from `fetch` itself) are not caught here — the caller
+ * wraps this call with toSafeStageError("branch-validation-failed", ...).
  */
 export async function fetchBranchInfo(
   fetchImpl: typeof fetch,
@@ -108,7 +154,10 @@ export async function fetchBranchInfo(
     headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
   });
   if (!res.ok) {
-    throw new OperatorError(`Could not verify the target branch via the Neon Management API (HTTP ${res.status}).`);
+    throw new OperatorError(
+      `Could not verify the target branch via the Neon Management API (HTTP ${res.status}).`,
+      "branch-validation-failed"
+    );
   }
   const json = (await res.json()) as { branch?: { name?: string; default?: boolean } };
   return { name: json.branch?.name, default: Boolean(json.branch?.default) };
@@ -127,16 +176,25 @@ export async function fetchBranchInfo(
 export function assertBranchAllowedForEnv(env: Env, branch: BranchInfo): void {
   if (env === "development") {
     if (branch.default) {
-      throw new OperatorError("Refusing to continue: --env=development but the target branch is the default/production branch.");
+      throw new OperatorError(
+        "Refusing to continue: --env=development but the target branch is the default/production branch.",
+        "branch-validation-failed"
+      );
     }
     if (branch.name !== "servicedesk-lite-dev") {
-      throw new OperatorError(`Refusing to continue: --env=development requires servicedesk-lite-dev, not "${branch.name}".`);
+      throw new OperatorError(
+        `Refusing to continue: --env=development requires servicedesk-lite-dev, not "${branch.name}".`,
+        "branch-validation-failed"
+      );
     }
     return;
   }
 
   if (!branch.default) {
-    throw new OperatorError("Refusing to continue: --env=production requires the default/production branch.");
+    throw new OperatorError(
+      "Refusing to continue: --env=production requires the default/production branch.",
+      "branch-validation-failed"
+    );
   }
 }
 
@@ -156,7 +214,11 @@ export type QueryClient = {
 
 export type ProfileLookup = { exists: boolean; role: string | null };
 
-/** Read-only — safe to call in --dry-run. Never selects id/email, only role. */
+/**
+ * Read-only — safe to call in --dry-run. Never selects id/email, only
+ * role. A raw driver error here is not caught — the caller wraps this call
+ * with toSafeStageError("profile-lookup-failed", ...).
+ */
 export async function lookupProfile(client: QueryClient, userId: string): Promise<ProfileLookup> {
   const { rows } = await client.query(`SELECT role FROM public.profiles WHERE id = $1`, [userId]);
   if (rows.length === 0) {
@@ -184,7 +246,9 @@ export function decideMutation(lookup: ProfileLookup): MutationDecision {
 /**
  * The only mutating call this script ever makes — always parameterized,
  * always this exact trusted-operator RPC (drizzle/0008_admin_bootstrap_
- * hardening.sql). Never reachable via the Data API.
+ * hardening.sql). Never reachable via the Data API. A raw driver error
+ * here is not caught — performPromotion() wraps this call with
+ * toSafeStageError("promotion-failed", ...).
  */
 export async function promoteProfileToAdmin(client: QueryClient, userId: string): Promise<void> {
   await client.query(`SELECT * FROM private.set_profile_role($1, 'admin'::public.user_role)`, [userId]);
@@ -196,7 +260,11 @@ export async function promoteProfileToAdmin(client: QueryClient, userId: string)
  * (private.set_profile_role is never called again), and promote requires
  * `confirm()` to resolve true (from the operator typing the exact phrase)
  * before the one mutating call happens. `confirm` is injected so this is
- * testable without real stdin.
+ * testable without real stdin, and is expected to itself throw an
+ * OperatorError tagged "confirmation-failed" for anything other than a
+ * clean true/false resolution (scripts/make-admin.ts's promptForPhrase
+ * does this) — a plain `false` here is treated as the ordinary
+ * wrong-phrase case, not an unexpected failure.
  */
 export async function performPromotion(params: {
   client: QueryClient;
@@ -215,27 +283,49 @@ export async function performPromotion(params: {
 
   const confirmed = await params.confirm();
   if (!confirmed) {
-    throw new OperatorError("Aborted: confirmation phrase did not match.");
+    throw new OperatorError("Aborted: confirmation phrase did not match.", "confirmation-failed");
   }
 
-  await promoteProfileToAdmin(params.client, params.userId);
+  try {
+    await promoteProfileToAdmin(params.client, params.userId);
+  } catch (error) {
+    throw toSafeStageError("promotion-failed", error);
+  }
   return "promoted";
 }
 
 /**
+ * Closes the database client exactly once, best-effort. Never throws:
+ * returns `null` on success or a safe, "cleanup-failed"-tagged
+ * OperatorError on failure, so the caller can decide how to react (see
+ * scripts/make-admin.ts — a cleanup failure *after* the real operation
+ * already succeeded is reported as a non-fatal warning, not a failure of
+ * the operation itself).
+ */
+export async function safeCleanup(client: { end: () => Promise<void> }): Promise<OperatorError | null> {
+  try {
+    await client.end();
+    return null;
+  } catch (error) {
+    return toSafeStageError("cleanup-failed", error);
+  }
+}
+
+/**
  * Formats any caught error for stderr. `OperatorError` messages are
- * hand-authored in this module and never contain a user id, email, URL, or
- * hostname, so they're safe to print as-is. Anything else (a real pg/fetch
- * driver error) is reduced to its bare SQLSTATE `code` if present — never
- * `.message`, which can embed the interpolated user id from a Postgres
- * RAISE EXCEPTION (see private.set_profile_role's "No profiles row for id
- * %") or a hostname from a connection failure.
+ * hand-authored in this module (directly, or via toSafeStageError) and
+ * never contain a user id, email, URL, or hostname, so they're safe to
+ * print as-is, with their stage tag if one is set. Anything else is
+ * reduced to its bare SQLSTATE `code` if present — this branch should be
+ * unreachable in practice once every await in scripts/make-admin.ts is
+ * wrapped with toSafeStageError, but stays as defense in depth.
  */
 export function formatFailureMessage(error: unknown): string {
   if (error instanceof OperatorError) {
-    return `make-admin failed: ${error.message}`;
+    const stageSuffix = error.stage ? ` [${error.stage}]` : "";
+    return `make-admin failed${stageSuffix}: ${error.message}`;
   }
   const code = (error as { code?: unknown } | null)?.code;
   const codeSuffix = typeof code === "string" && code.length > 0 ? ` (${code})` : "";
-  return `make-admin failed: unexpected error${codeSuffix}. Rerun with --dry-run to investigate safely.`;
+  return `make-admin failed: unexpected error${codeSuffix}.`;
 }

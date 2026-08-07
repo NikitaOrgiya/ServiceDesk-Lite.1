@@ -10,6 +10,8 @@ import {
   decideMutation,
   promoteProfileToAdmin,
   performPromotion,
+  safeCleanup,
+  toSafeStageError,
   formatFailureMessage,
   OperatorError,
   type QueryClient,
@@ -287,12 +289,99 @@ describe("performPromotion", () => {
     );
     expect(query).not.toHaveBeenCalled();
   });
+
+  it("tags a wrong-phrase abort with the confirmation-failed stage", async () => {
+    const { client } = fakeClient([]);
+    const confirm = vi.fn().mockResolvedValue(false);
+    try {
+      await performPromotion({ client, userId: "x", decision: { kind: "promote" }, confirm });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(OperatorError);
+      expect((error as OperatorError).stage).toBe("confirmation-failed");
+    }
+  });
+
+  it("propagates a stage tag thrown by confirm() itself unchanged (e.g. a prompt-level failure)", async () => {
+    const { client, query } = fakeClient([]);
+    const confirm = vi.fn().mockRejectedValue(new OperatorError("prompt broke", "confirmation-failed"));
+    await expect(performPromotion({ client, userId: "x", decision: { kind: "promote" }, confirm })).rejects.toMatchObject({
+      stage: "confirmation-failed",
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("tags an unexpected mutation-query failure with the promotion-failed stage, without leaking its message", async () => {
+    const query = vi.fn().mockRejectedValue(Object.assign(new Error("relation public.profiles does not exist for user abc-123"), { code: "42P01" }));
+    const client: QueryClient = { query };
+    const confirm = vi.fn().mockResolvedValue(true);
+    try {
+      await performPromotion({ client, userId: "abc-123", decision: { kind: "promote" }, confirm });
+      expect.unreachable();
+    } catch (error) {
+      expect(error).toBeInstanceOf(OperatorError);
+      expect((error as OperatorError).stage).toBe("promotion-failed");
+      expect((error as Error).message).not.toContain("abc-123");
+      expect((error as Error).message).toContain("42P01");
+    }
+  });
+});
+
+describe("toSafeStageError", () => {
+  it("returns an existing OperatorError unchanged (already safe, possibly already staged)", () => {
+    const original = new OperatorError("already safe", "confirmation-failed");
+    expect(toSafeStageError("cleanup-failed", original)).toBe(original);
+  });
+
+  it("wraps a raw error with the given stage and never keeps its message", () => {
+    const raw = new Error("connection to server at \"ep-secret-host.neon.tech\" failed for user id abc-123");
+    const wrapped = toSafeStageError("database-connect-failed", raw);
+    expect(wrapped).toBeInstanceOf(OperatorError);
+    expect(wrapped.stage).toBe("database-connect-failed");
+    expect(wrapped.message).not.toContain("ep-secret-host");
+    expect(wrapped.message).not.toContain("abc-123");
+  });
+
+  it("keeps only the SQLSTATE code from a driver-style error", () => {
+    const raw = Object.assign(new Error("some raw driver detail"), { code: "57P01" });
+    const wrapped = toSafeStageError("profile-lookup-failed", raw);
+    expect(wrapped.message).toContain("57P01");
+    expect(wrapped.message).not.toContain("some raw driver detail");
+  });
+
+  it("wraps a non-Error thrown value safely", () => {
+    const wrapped = toSafeStageError("branch-validation-failed", "a raw string throw with secret-abc");
+    expect(wrapped.message).not.toContain("secret-abc");
+    expect(wrapped.stage).toBe("branch-validation-failed");
+  });
+});
+
+describe("safeCleanup", () => {
+  it("resolves null when client.end() succeeds", async () => {
+    const end = vi.fn().mockResolvedValue(undefined);
+    expect(await safeCleanup({ end })).toBeNull();
+    expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("never throws, and returns a cleanup-failed OperatorError when client.end() rejects", async () => {
+    const end = vi.fn().mockRejectedValue(new Error("handle already closing"));
+    const result = await safeCleanup({ end });
+    expect(result).toBeInstanceOf(OperatorError);
+    expect(result?.stage).toBe("cleanup-failed");
+    expect(result?.message).not.toContain("handle already closing");
+  });
 });
 
 describe("formatFailureMessage", () => {
   it("prints an OperatorError's own message verbatim (it is always PII-free by construction)", () => {
     expect(formatFailureMessage(new OperatorError("Refusing to continue: something specific."))).toBe(
       "make-admin failed: Refusing to continue: something specific."
+    );
+  });
+
+  it("includes the stage tag when the OperatorError carries one", () => {
+    expect(formatFailureMessage(new OperatorError("operation failed.", "database-connect-failed"))).toBe(
+      "make-admin failed [database-connect-failed]: operation failed."
     );
   });
 
