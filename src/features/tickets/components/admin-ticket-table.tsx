@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/features/tickets/components/status-badge";
 import { PriorityBadge } from "@/features/tickets/components/priority-badge";
@@ -10,17 +12,22 @@ type AdminTicketTableProps = {
 };
 
 /**
- * Read-only — no ticket number/row here links anywhere. Employee ticket
- * rows link to /app/tickets/[id] (an employee-only route gated to the
- * ticket's own author), which an admin registry must never reuse; a
- * dedicated, safe admin detail route doesn't exist yet and is out of
- * scope for this PR, so ticket identity is shown as plain text.
+ * Read-only — each row's ticket number/title link to the admin-only detail
+ * route (/admin/tickets/[id], src/app/admin/tickets/[id]/page.tsx), built
+ * from `ticket.id` (the same technical route-key convention the employee
+ * detail route already uses). Never links to /app/tickets/[id] — that route
+ * is employee-only, gated to the ticket's own author, and must never be
+ * reused from the admin registry.
  *
  * `hasActiveFilters` distinguishes "the registry is genuinely empty" from
  * "these filters just don't match anything" without an extra unbounded
  * query — the caller already knows whether q/status/priority/assignee are
  * active (see hasActiveAdminTicketFilters in schemas/admin-list-query.ts).
  */
+export function getAdminTicketDetailHref(ticketId: string): string {
+  return `/admin/tickets/${ticketId}`;
+}
+
 export function AdminTicketTable({ items, hasActiveFilters }: AdminTicketTableProps) {
   if (items.length === 0) {
     return (
@@ -69,8 +76,16 @@ export function AdminTicketTable({ items, hasActiveFilters }: AdminTicketTablePr
           <tbody className="divide-y">
             {items.map((ticket) => (
               <tr key={ticket.id} className="hover:bg-muted/30">
-                <td className="px-4 py-3 font-medium whitespace-nowrap">{ticket.publicNumber}</td>
-                <td className="max-w-xs truncate px-4 py-3">{ticket.title}</td>
+                <td className="px-4 py-3 font-medium whitespace-nowrap">
+                  <Link href={getAdminTicketDetailHref(ticket.id)} className="hover:underline">
+                    {ticket.publicNumber}
+                  </Link>
+                </td>
+                <td className="max-w-xs truncate px-4 py-3">
+                  <Link href={getAdminTicketDetailHref(ticket.id)} className="hover:underline">
+                    {ticket.title}
+                  </Link>
+                </td>
                 <td className="px-4 py-3 whitespace-nowrap">
                   <PriorityBadge priority={ticket.priority} />
                 </td>
@@ -99,10 +114,14 @@ export function AdminTicketTable({ items, hasActiveFilters }: AdminTicketTablePr
           <Card key={ticket.id}>
             <CardContent className="flex flex-col gap-2 py-4">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{ticket.publicNumber}</span>
+                <Link href={getAdminTicketDetailHref(ticket.id)} className="font-medium hover:underline">
+                  {ticket.publicNumber}
+                </Link>
                 <StatusBadge status={ticket.status} />
               </div>
-              <p className="line-clamp-2 text-sm">{ticket.title}</p>
+              <Link href={getAdminTicketDetailHref(ticket.id)} className="line-clamp-2 text-sm hover:underline">
+                {ticket.title}
+              </Link>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{ticket.requesterName}</span>
                 <span aria-hidden>·</span>
