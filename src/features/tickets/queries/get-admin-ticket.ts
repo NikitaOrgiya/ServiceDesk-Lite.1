@@ -6,7 +6,7 @@ import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 import { toSingleEmbed } from "@/features/tickets/utils/postgrest-embed";
 import type { TicketCategory, TicketPriority } from "@/features/tickets/schemas/create-ticket";
-import type { TicketDetail, TicketStatus } from "@/features/tickets/types/ticket";
+import type { AdminTicketDetail, TicketStatus } from "@/features/tickets/types/ticket";
 
 /**
  * Loads one ticket for the admin ticket detail route (src/app/admin/tickets/[id])
@@ -32,8 +32,14 @@ import type { TicketDetail, TicketStatus } from "@/features/tickets/types/ticket
  * failed" — see getEmployeeTicketDetail's own doc comment for why callers
  * must not try to distinguish those two cases either (both must render as
  * plain not-found to the caller).
+ *
+ * Also selects the raw `assignee_id` column (alongside the existing
+ * `assignee` name embed) — the technical id an admin mutation form needs to
+ * identify the *current* assignee unambiguously (two profiles can share the
+ * same full_name), returned only as AdminTicketDetail.assigneeId, a plain
+ * data field never rendered as visible text by any caller.
  */
-export async function getAdminTicketDetail(ticketId: string): Promise<TicketDetail | null> {
+export async function getAdminTicketDetail(ticketId: string): Promise<AdminTicketDetail | null> {
   await requireAdmin();
 
   const client = createDataApiClient();
@@ -41,7 +47,7 @@ export async function getAdminTicketDetail(ticketId: string): Promise<TicketDeta
   const { data: ticketRow, error } = await client
     .from("tickets")
     .select(
-      `id, public_number, title, description, category, priority, status, due_at, resolved_at, created_at, updated_at,
+      `id, public_number, title, description, category, priority, status, due_at, resolved_at, created_at, updated_at, assignee_id,
        author:profiles!tickets_author_id_profiles_id_fk(full_name),
        assignee:profiles!tickets_assignee_id_profiles_id_fk(full_name)`
     )
@@ -81,5 +87,6 @@ export async function getAdminTicketDetail(ticketId: string): Promise<TicketDeta
     updatedAt: ticketRow.updated_at as string,
     authorName: author?.full_name ?? "—",
     assigneeName: assignee?.full_name ?? null,
+    assigneeId: (ticketRow.assignee_id as string | null) ?? null,
   };
 }

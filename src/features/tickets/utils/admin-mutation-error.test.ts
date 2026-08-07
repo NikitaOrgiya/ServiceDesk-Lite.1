@@ -41,4 +41,32 @@ describe("mapAdminMutationErrorCode", () => {
       expect(message).not.toMatch(/transition:.*->/i);
     }
   });
+
+  describe("extraCodeMessages (e.g. 23514 for the assignee mutation)", () => {
+    it("maps a code present in extraCodeMessages to its supplied message", () => {
+      const message = mapAdminMutationErrorCode("23514", "generic fallback", "generic fallback", {
+        "23514": "assignee unavailable",
+      });
+      expect(message).toBe("assignee unavailable");
+    });
+
+    it("extraCodeMessages takes priority over the built-in P0002/42501/22023 cases", () => {
+      const message = mapAdminMutationErrorCode("P0002", "generic fallback", "invalid transition", {
+        P0002: "overridden not-found",
+      });
+      expect(message).toBe("overridden not-found");
+    });
+
+    it("a code absent from extraCodeMessages falls through to the built-in cases unchanged", () => {
+      const message = mapAdminMutationErrorCode("42501", "generic fallback", "generic fallback", {
+        "23514": "assignee unavailable",
+      });
+      expect(message).toBe(getTicketErrorMessage("adminNotAuthorized"));
+    });
+
+    it("omitting extraCodeMessages entirely behaves exactly as before (status/priority call sites unaffected)", () => {
+      const message = mapAdminMutationErrorCode("22023", "generic fallback", "invalid transition");
+      expect(message).toBe("invalid transition");
+    });
+  });
 });

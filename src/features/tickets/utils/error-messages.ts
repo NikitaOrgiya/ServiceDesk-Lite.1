@@ -19,6 +19,9 @@ export const TICKET_ERROR_MESSAGES = {
   adminInvalidStatusTransition: "Недопустимый переход статуса.",
   adminTicketNotFound: "Заявка не найдена или недоступна.",
   adminNotAuthorized: "Недостаточно прав для выполнения действия.",
+  adminUpdateAssignee: "Не удалось изменить исполнителя заявки. Попробуйте ещё раз позже.",
+  adminAssigneeUnavailable: "Выбранный исполнитель недоступен.",
+  adminUpdateDueAt: "Не удалось изменить срок выполнения заявки. Попробуйте ещё раз позже.",
 } as const;
 
 export type TicketErrorContext = keyof typeof TICKET_ERROR_MESSAGES;

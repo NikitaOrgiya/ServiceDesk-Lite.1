@@ -60,6 +60,19 @@ export type TicketDetail = {
   assigneeName: string | null;
 };
 
+/**
+ * Admin-only superset of TicketDetail carrying the assignee's technical
+ * profile id — needed so the assignee mutation form can identify the
+ * *current* assignee by id (two profiles can share the same full_name;
+ * the id is the only reliable identity) without ever rendering that id as
+ * visible text. Deliberately kept separate from TicketDetail — which stays
+ * shared, unmodified, and minimal for the read-only employee detail page —
+ * rather than adding assigneeId there.
+ */
+export type AdminTicketDetail = TicketDetail & {
+  assigneeId: string | null;
+};
+
 export type TicketCommentItem = {
   id: string;
   message: string;
