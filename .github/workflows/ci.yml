@@ -48,48 +48,68 @@ jobs:
   # configured — see README.md. Never applies migrations to a production
   # branch (there is no automatic migration-apply step in this workflow at
   # all), and no connection string or secret value is ever printed.
+  #
+  # The `secrets` context is not permitted inside `jobs.<job_id>.if` (nor is
+  # `env` a valid substitute there — job-level `env:` and step outputs both
+  # resolve too late for a job-level `if` to see them). The job therefore
+  # always starts; its own first step ("Check required secrets") is the
+  # only unconditional one, and only checks *presence* via a plain shell
+  # `[ -n ... ]` test — it never echoes the value, and every later step is
+  # gated on that step's `enabled` output instead.
   db-security-tests:
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: secrets.NEON_TEST_DATABASE_URL != ''
 
     env:
       DATABASE_URL: ${{ secrets.NEON_TEST_DATABASE_URL }}
 
     steps:
+      - name: Check required secrets
+        id: gate
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.gate.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.gate.outputs.enabled == 'true'
         run: npm ci
 
       - name: Install PostgreSQL client
+        if: steps.gate.outputs.enabled == 'true'
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
       - name: SQL security tests (live Neon structural/security audit only)
+        if: steps.gate.outputs.enabled == 'true'
         run: npm run test:db:security
 
   # Runs only when a real Neon development branch (Neon Auth + Data API
   # enabled) and real test accounts are configured as repository/
   # environment secrets — see README.md for the full list. Never made
   # required for the main job above, and no secret value is ever written
-  # into this file.
+  # into this file. Same "no secrets in jobs.<job_id>.if" constraint and
+  # gating pattern as db-security-tests above — see that job's comment for
+  # why. The gate here also now checks NEON_AUTH_COOKIE_SECRET, which the
+  # job's own env block already mapped from secrets.E2E_NEON_AUTH_COOKIE_
+  # SECRET but the old job-level `if` never checked for presence — a job
+  # that requires a secret must gate on it too, not just skip based on the
+  # other six.
   auth-e2e:
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: >
-      secrets.E2E_NEON_AUTH_BASE_URL != '' &&
-      secrets.E2E_NEON_DATA_API_URL != '' &&
-      secrets.E2E_EMPLOYEE_EMAIL != '' &&
-      secrets.E2E_EMPLOYEE_PASSWORD != '' &&
-      secrets.E2E_ADMIN_EMAIL != '' &&
-      secrets.E2E_ADMIN_PASSWORD != ''
 
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
@@ -102,39 +122,52 @@ jobs:
       E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 
     steps:
+      - name: Check required secrets
+        id: gate
+        run: |
+          if [ -n "$NEON_AUTH_BASE_URL" ] && [ -n "$NEON_AUTH_COOKIE_SECRET" ] && [ -n "$NEON_DATA_API_URL" ] && [ -n "$E2E_EMPLOYEE_EMAIL" ] && [ -n "$E2E_EMPLOYEE_PASSWORD" ] && [ -n "$E2E_ADMIN_EMAIL" ] && [ -n "$E2E_ADMIN_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.gate.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.gate.outputs.enabled == 'true'
         run: npm ci
 
       - name: Install Playwright browsers
+        if: steps.gate.outputs.enabled == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Build
+        if: steps.gate.outputs.enabled == 'true'
         run: npm run build
 
       - name: Real Neon Auth E2E
+        if: steps.gate.outputs.enabled == 'true'
         run: npm run test:e2e:auth
 
-  # Same gating as auth-e2e — this suite additionally exercises the
-  # employee ticket cabinet (create/list/comment/cancel) end to end. All
-  # ticket data it creates is prefixed `E2E:`; it never resets the database
-  # and never changes the Admin account's role.
+  # Same gating pattern as auth-e2e above — this suite additionally
+  # exercises the employee ticket cabinet (create/list/comment/cancel) end
+  # to end. All ticket data it creates is prefixed `E2E:`; it never resets
+  # the database and never changes the Admin account's role. Same fix as
+  # auth-e2e too: the old job-level `if` never checked
+  # E2E_NEON_AUTH_COOKIE_SECRET either, even though this job's env block
+  # also depends on it.
   employee-e2e:
     runs-on: ubuntu-latest
     needs: build-and-test
-    if: >
-      secrets.E2E_NEON_AUTH_BASE_URL != '' &&
-      secrets.E2E_NEON_DATA_API_URL != '' &&
-      secrets.E2E_EMPLOYEE_EMAIL != '' &&
-      secrets.E2E_EMPLOYEE_PASSWORD != ''
 
     env:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
@@ -145,23 +178,38 @@ jobs:
       E2E_EMPLOYEE_PASSWORD: ${{ secrets.E2E_EMPLOYEE_PASSWORD }}
 
     steps:
+      - name: Check required secrets
+        id: gate
+        run: |
+          if [ -n "$NEON_AUTH_BASE_URL" ] && [ -n "$NEON_AUTH_COOKIE_SECRET" ] && [ -n "$NEON_DATA_API_URL" ] && [ -n "$E2E_EMPLOYEE_EMAIL" ] && [ -n "$E2E_EMPLOYEE_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        if: steps.gate.outputs.enabled == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.gate.outputs.enabled == 'true'
         run: npm ci
 
       - name: Install Playwright browsers
+        if: steps.gate.outputs.enabled == 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Build
+        if: steps.gate.outputs.enabled == 'true'
         run: npm run build
 
       - name: Real Neon employee ticket workflow E2E
+        if: steps.gate.outputs.enabled == 'true'
         run: npm run test:e2e:employee
