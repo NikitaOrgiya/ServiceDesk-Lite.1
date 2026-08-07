@@ -1,16 +1,27 @@
-import { Card, CardContent } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { parseAdminTicketListQuery } from "@/features/tickets/schemas/admin-list-query";
+import { getAdminTickets } from "@/features/tickets/queries/get-admin-tickets";
+import { getTicketErrorMessage } from "@/features/tickets/utils/error-messages";
+import { AdminTicketTable } from "@/features/tickets/components/admin-ticket-table";
+import { AdminTicketPagination } from "@/features/tickets/components/admin-ticket-pagination";
 
-const COLUMNS = [
-  "Номер",
-  "Тема",
-  "Сотрудник",
-  "Категория",
-  "Приоритет",
-  "Статус",
-] as const;
+// Reads every ticket visible to the caller under RLS and depends on the
+// request's own URL search params (?page=) — must never be statically
+// cached. Admin-only access is already enforced above this page, at
+// src/app/admin/layout.tsx's requireAdmin() call (re-verified server-side
+// from public.profiles.role on every request, the same as every other
+// /admin/* page) — this page performs no authorization of its own.
+export const dynamic = "force-dynamic";
 
-export default function AdminTicketsPage() {
+type AdminTicketsPageProps = {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function AdminTicketsPage({ searchParams }: AdminTicketsPageProps) {
+  const rawParams = await searchParams;
+  const query = parseAdminTicketListQuery(rawParams);
+  const result = await getAdminTickets(query);
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -20,36 +31,17 @@ export default function AdminTicketsPage() {
         </p>
       </div>
 
-      <Card>
-        <CardContent className="px-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead>
-                <tr className="text-muted-foreground">
-                  {COLUMNS.map((column) => (
-                    <th key={column} className="px-6 pb-3 font-medium">
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-            </table>
-          </div>
-          <Separator />
-          <div className="flex flex-col items-center gap-1 px-6 py-10 text-center">
-            <p className="text-sm font-medium">Заявок пока нет</p>
-            <p className="text-sm text-muted-foreground">
-              Реестр подключится к базе данных на следующем этапе разработки.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/*
-        TODO(stage-2): this page must only be reachable by an authenticated
-        admin — add the server-side role check (middleware or a layout-level
-        guard reading the Supabase session) once auth exists.
-      */}
+      {result === null ? (
+        <Alert variant="destructive">
+          <AlertTitle>Не удалось загрузить реестр</AlertTitle>
+          <AlertDescription>{getTicketErrorMessage("adminList")}</AlertDescription>
+        </Alert>
+      ) : (
+        <>
+          <AdminTicketTable items={result.items} />
+          <AdminTicketPagination query={query} total={result.total} />
+        </>
+      )}
     </div>
   );
 }
