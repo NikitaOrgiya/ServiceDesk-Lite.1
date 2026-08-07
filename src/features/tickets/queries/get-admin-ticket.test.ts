@@ -59,6 +59,7 @@ function ticketRow(overrides: Partial<Record<string, unknown>> = {}) {
     resolved_at: null,
     created_at: "2026-01-01T00:00:00.000Z",
     updated_at: "2026-01-02T00:00:00.000Z",
+    assignee_id: null,
     author: { full_name: "Author Name" },
     assignee: null,
     ...overrides,
@@ -94,6 +95,7 @@ describe("getAdminTicketDetail", () => {
         updatedAt: "2026-01-02T00:00:00.000Z",
         authorName: "Author Name",
         assigneeName: null,
+        assigneeId: null,
       });
     });
 
@@ -125,6 +127,25 @@ describe("getAdminTicketDetail", () => {
 
       const result = await getAdminTicketDetail("ticket-1");
       expect(result?.assigneeName).toBeNull();
+    });
+
+    it("maps the raw assignee_id column to assigneeId when present", async () => {
+      const fake = makeFakeClient({
+        data: ticketRow({ assignee_id: "profile-7", assignee: { full_name: "Assignee Name" } }),
+        error: null,
+      });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      const result = await getAdminTicketDetail("ticket-1");
+      expect(result?.assigneeId).toBe("profile-7");
+    });
+
+    it("maps a null assignee_id to assigneeId: null", async () => {
+      const fake = makeFakeClient({ data: ticketRow({ assignee_id: null }), error: null });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      const result = await getAdminTicketDetail("ticket-1");
+      expect(result?.assigneeId).toBeNull();
     });
 
     it("maps category as-is (existing enum, no relabeling)", async () => {
@@ -217,22 +238,26 @@ describe("getAdminTicketDetail", () => {
   });
 
   describe("privacy", () => {
-    it("the returned detail never carries author_id/assignee_id, raw profile ids, email, or Auth ids", async () => {
+    // assigneeId is a deliberate, documented exception (see the function's
+    // own doc comment and AdminTicketDetail): the admin assignee-mutation
+    // form needs the technical id to identify the *current* assignee
+    // unambiguously. Every other raw id/email stays absent.
+    it("the returned detail never carries authorId, the raw author_id/assignee_id column names, email, or Auth ids", async () => {
       const fake = makeFakeClient({ data: ticketRow(), error: null });
       createDataApiClient.mockReturnValue(fake.client);
 
       const result = await getAdminTicketDetail("ticket-1");
 
       expect(result).not.toHaveProperty("authorId");
-      expect(result).not.toHaveProperty("assigneeId");
       expect(result).not.toHaveProperty("author_id");
       expect(result).not.toHaveProperty("assignee_id");
       expect(result).not.toHaveProperty("email");
       expect(result).not.toHaveProperty("userId");
       expect(result).not.toHaveProperty("authUserId");
+      expect(result).toHaveProperty("assigneeId");
     });
 
-    it("the SELECT itself never requests author_id/assignee_id/email columns", async () => {
+    it("the SELECT requests assignee_id (needed for the mutation form) but never author_id/email columns", async () => {
       const fake = makeFakeClient({ data: ticketRow(), error: null });
       createDataApiClient.mockReturnValue(fake.client);
 
@@ -240,8 +265,8 @@ describe("getAdminTicketDetail", () => {
 
       const selectArg = String(fake.select.mock.calls[0][0]);
       expect(selectArg).not.toMatch(/\bauthor_id\b/);
-      expect(selectArg).not.toMatch(/\bassignee_id\b/);
       expect(selectArg).not.toMatch(/\bemail\b/);
+      expect(selectArg).toMatch(/\bassignee_id\b/);
       expect(selectArg).toMatch(/full_name/);
     });
   });

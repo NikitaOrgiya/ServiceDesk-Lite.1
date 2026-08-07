@@ -3,9 +3,12 @@ import { notFound } from "next/navigation";
 import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { ticketIdSchema } from "@/features/tickets/schemas/ticket-id";
 import { getAdminTicketDetail } from "@/features/tickets/queries/get-admin-ticket";
+import { getAdminAssigneeOptions } from "@/features/tickets/queries/get-admin-assignee-options";
 import { TicketDetails } from "@/features/tickets/components/ticket-details";
 import { AdminTicketStatusForm } from "@/features/tickets/components/admin-ticket-status-form";
 import { AdminTicketPriorityForm } from "@/features/tickets/components/admin-ticket-priority-form";
+import { AdminTicketAssigneeForm } from "@/features/tickets/components/admin-ticket-assignee-form";
+import { AdminTicketDueAtForm } from "@/features/tickets/components/admin-ticket-due-at-form";
 
 // Reads one RLS-scoped ticket per request — must never be statically cached.
 export const dynamic = "force-dynamic";
@@ -24,7 +27,16 @@ export default async function AdminTicketDetailPage({ params }: AdminTicketDetai
     notFound();
   }
 
-  const ticket = await getAdminTicketDetail(idResult.data);
+  // Ticket-missing and assignee-options-failed are independent failure
+  // modes: getAdminTicketDetail() returns null (never throws) on its own
+  // failure, and getAdminAssigneeOptions() does the same on its own — so
+  // Promise.all here can't let one function's failure masquerade as the
+  // other's; only a missing/inaccessible *ticket* 404s the page, an
+  // assignee-options failure only degrades AdminTicketAssigneeForm below.
+  const [ticket, assigneeOptions] = await Promise.all([
+    getAdminTicketDetail(idResult.data),
+    getAdminAssigneeOptions(),
+  ]);
 
   if (!ticket) {
     notFound();
@@ -50,6 +62,14 @@ export default async function AdminTicketDetailPage({ params }: AdminTicketDetai
           ticketId={ticket.id}
           currentPriority={ticket.priority}
         />
+        <AdminTicketAssigneeForm
+          key={ticket.assigneeId ?? "unassigned"}
+          ticketId={ticket.id}
+          currentAssigneeId={ticket.assigneeId}
+          currentAssigneeName={ticket.assigneeName}
+          assigneeOptions={assigneeOptions}
+        />
+        <AdminTicketDueAtForm key={ticket.dueAt ?? "unset"} ticketId={ticket.id} currentDueAt={ticket.dueAt} />
       </div>
     </div>
   );
