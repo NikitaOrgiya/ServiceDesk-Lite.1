@@ -2,9 +2,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 /**
  * Fake Data API query builder — mirrors only the chain get-admin-tickets.ts
- * actually calls (.from/.select/.order/.range), plus spies for the
- * mutation methods it must never call (.insert/.update/.delete/.rpc), so a
- * regression that accidentally turns this read-only registry into a
+ * actually calls (.from/.select/.eq/.is/.or/.order/.range), plus spies for
+ * the mutation methods it must never call (.insert/.update/.delete/.rpc),
+ * so a regression that accidentally turns this read-only registry into a
  * mutating call fails loudly here rather than only being caught by manual
  * review.
  */
@@ -15,16 +15,22 @@ function makeFakeClient(result: { data: unknown[] | null; error: unknown; count:
   const rpc = vi.fn();
   const range = vi.fn().mockResolvedValue(result);
   const order = vi.fn();
+  const or = vi.fn();
+  const is = vi.fn();
+  const eq = vi.fn();
   const select = vi.fn();
   const from = vi.fn();
 
-  const builder = { select, order, range, insert, update, delete: del };
+  const builder = { select, eq, is, or, order, range, insert, update, delete: del };
   select.mockReturnValue(builder);
+  eq.mockReturnValue(builder);
+  is.mockReturnValue(builder);
+  or.mockReturnValue(builder);
   order.mockReturnValue(builder);
   from.mockReturnValue(builder);
 
   const client = { from, rpc };
-  return { client, from, select, order, range, insert, update, delete: del, rpc };
+  return { client, from, select, eq, is, or, order, range, insert, update, delete: del, rpc };
 }
 
 const createDataApiClient = vi.fn();
@@ -47,6 +53,13 @@ vi.mock("@/features/auth/server/require-admin", () => ({
 const ADMIN_PROFILE = { id: "admin-1", fullName: "Admin", role: "admin" as const, department: null, isActive: true };
 
 const { getAdminTickets, ADMIN_TICKET_PAGE_SIZE } = await import("./get-admin-tickets");
+const { ADMIN_TICKET_UNASSIGNED } = await import("@/features/tickets/schemas/admin-list-query");
+import type { AdminTicketListQuery } from "@/features/tickets/schemas/admin-list-query";
+
+/** Full, valid query object with sane defaults — override only what a test cares about. */
+function baseQuery(overrides: Partial<AdminTicketListQuery> = {}): AdminTicketListQuery {
+  return { page: 1, q: "", status: "all", priority: "all", assignee: "", ...overrides };
+}
 
 function ticketRow(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -74,7 +87,7 @@ describe("getAdminTickets", () => {
     const fake = makeFakeClient({ data: [ticketRow()], error: null, count: 1 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    const result = await getAdminTickets({ page: 1 });
+    const result = await getAdminTickets(baseQuery());
 
     expect(result).not.toBeNull();
     expect(result?.total).toBe(1);
@@ -101,7 +114,7 @@ describe("getAdminTickets", () => {
     });
     createDataApiClient.mockReturnValue(fake.client);
 
-    const result = await getAdminTickets({ page: 1 });
+    const result = await getAdminTickets(baseQuery());
     expect(result?.items[0].assigneeName).toBe("Assignee Name");
   });
 
@@ -109,7 +122,7 @@ describe("getAdminTickets", () => {
     const fake = makeFakeClient({ data: [], error: null, count: 0 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    await getAdminTickets({ page: 1 });
+    await getAdminTickets(baseQuery());
 
     expect(fake.order).toHaveBeenCalledTimes(2);
     expect(fake.order).toHaveBeenNthCalledWith(1, "created_at", { ascending: false });
@@ -120,9 +133,152 @@ describe("getAdminTickets", () => {
     const fake = makeFakeClient({ data: [], error: null, count: 0 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    await getAdminTickets({ page: 1 });
+    await getAdminTickets(baseQuery());
 
     expect(fake.select.mock.calls[0][1]).toEqual({ count: "exact" });
+  });
+
+  describe("no filters applied", () => {
+    it("calls neither .eq/.is/.or when every filter is at its default", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery());
+
+      expect(fake.eq).not.toHaveBeenCalled();
+      expect(fake.is).not.toHaveBeenCalled();
+      expect(fake.or).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("search (q)", () => {
+    it("q only: filters by public_number/title via a safely-escaped OR", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ q: "printer" }));
+
+      expect(fake.or).toHaveBeenCalledTimes(1);
+      const orArg = String(fake.or.mock.calls[0][0]);
+      expect(orArg).toContain("public_number.ilike.");
+      expect(orArg).toContain("title.ilike.");
+      expect(orArg).toContain("printer");
+      expect(fake.eq).not.toHaveBeenCalled();
+    });
+
+    it("escapes PostgREST meta-characters instead of letting them inject extra filter clauses", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ q: 'a,b(c)"d' }));
+
+      const orArg = String(fake.or.mock.calls[0][0]);
+      // The raw meta-characters must be wrapped/escaped, not passed through
+      // as unescaped filter-syntax control characters.
+      expect(orArg).toMatch(/"%a,b\(c\)\\"d%"/);
+    });
+
+    it("never filters by internal id, author_id, assignee_id, or email through q", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ q: "someone@example.com" }));
+
+      const orArg = String(fake.or.mock.calls[0][0]);
+      expect(orArg).not.toMatch(/\bauthor_id\b/);
+      expect(orArg).not.toMatch(/\bassignee_id\b/);
+      expect(orArg).not.toMatch(/\bid\.eq\b/);
+    });
+  });
+
+  describe("status filter", () => {
+    it("status only: applies a single eq('status', ...)", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ status: "in_progress" }));
+
+      expect(fake.eq).toHaveBeenCalledWith("status", "in_progress");
+      expect(fake.eq).toHaveBeenCalledTimes(1);
+    });
+
+    it("'all' applies no status filter", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ status: "all" }));
+
+      expect(fake.eq).not.toHaveBeenCalledWith("status", expect.anything());
+    });
+  });
+
+  describe("priority filter", () => {
+    it("priority only: applies a single eq('priority', ...)", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ priority: "critical" }));
+
+      expect(fake.eq).toHaveBeenCalledWith("priority", "critical");
+      expect(fake.eq).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("assignee filter", () => {
+    it("assignee only: applies eq('assignee_id', <technical id>)", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ assignee: "profile-42" }));
+
+      expect(fake.eq).toHaveBeenCalledWith("assignee_id", "profile-42");
+      expect(fake.is).not.toHaveBeenCalled();
+    });
+
+    it("unassigned only: applies is('assignee_id', null), not eq", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ assignee: ADMIN_TICKET_UNASSIGNED }));
+
+      expect(fake.is).toHaveBeenCalledWith("assignee_id", null);
+      expect(fake.eq).not.toHaveBeenCalledWith("assignee_id", expect.anything());
+    });
+  });
+
+  describe("combined filters (AND semantics)", () => {
+    it("q + status", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ q: "vpn", status: "new" }));
+
+      expect(fake.eq).toHaveBeenCalledWith("status", "new");
+      expect(fake.or).toHaveBeenCalledTimes(1);
+    });
+
+    it("status + priority + assignee", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ status: "new", priority: "high", assignee: "profile-7" }));
+
+      expect(fake.eq).toHaveBeenCalledWith("status", "new");
+      expect(fake.eq).toHaveBeenCalledWith("priority", "high");
+      expect(fake.eq).toHaveBeenCalledWith("assignee_id", "profile-7");
+      expect(fake.eq).toHaveBeenCalledTimes(3);
+    });
+
+    it("all filters combined (q + status + priority + assignee)", async () => {
+      const fake = makeFakeClient({ data: [], error: null, count: 0 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      await getAdminTickets(baseQuery({ q: "printer", status: "new", priority: "critical", assignee: "profile-7" }));
+
+      expect(fake.eq).toHaveBeenCalledWith("priority", "critical");
+      expect(fake.eq).toHaveBeenCalledWith("assignee_id", "profile-7");
+      expect(fake.or).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("pagination range", () => {
@@ -130,7 +286,7 @@ describe("getAdminTickets", () => {
       const fake = makeFakeClient({ data: [], error: null, count: 0 });
       createDataApiClient.mockReturnValue(fake.client);
 
-      await getAdminTickets({ page: 1 });
+      await getAdminTickets(baseQuery({ page: 1 }));
 
       expect(fake.range).toHaveBeenCalledWith(0, ADMIN_TICKET_PAGE_SIZE - 1);
     });
@@ -139,19 +295,28 @@ describe("getAdminTickets", () => {
       const fake = makeFakeClient({ data: [], error: null, count: 0 });
       createDataApiClient.mockReturnValue(fake.client);
 
-      await getAdminTickets({ page: 3 });
+      await getAdminTickets(baseQuery({ page: 3 }));
 
       const from = 2 * ADMIN_TICKET_PAGE_SIZE;
       expect(fake.range).toHaveBeenCalledWith(from, from + ADMIN_TICKET_PAGE_SIZE - 1);
     });
 
-    it("never loads the whole table unbounded — range is always called", async () => {
+    it("never loads the whole table unbounded — range is always called, even with filters active", async () => {
       const fake = makeFakeClient({ data: [], error: null, count: 0 });
       createDataApiClient.mockReturnValue(fake.client);
 
-      await getAdminTickets({ page: 1 });
+      await getAdminTickets(baseQuery({ q: "printer", status: "new" }));
 
       expect(fake.range).toHaveBeenCalledTimes(1);
+    });
+
+    it("total reflects the filtered count, not an unfiltered table count", async () => {
+      const fake = makeFakeClient({ data: [ticketRow()], error: null, count: 3 });
+      createDataApiClient.mockReturnValue(fake.client);
+
+      const result = await getAdminTickets(baseQuery({ status: "new" }));
+
+      expect(result?.total).toBe(3);
     });
   });
 
@@ -159,7 +324,7 @@ describe("getAdminTickets", () => {
     const fake = makeFakeClient({ data: [], error: null, count: 0 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    const result = await getAdminTickets({ page: 999 });
+    const result = await getAdminTickets(baseQuery({ page: 999 }));
 
     expect(result).toEqual({ items: [], total: 0 });
   });
@@ -172,7 +337,7 @@ describe("getAdminTickets", () => {
     });
     createDataApiClient.mockReturnValue(fake.client);
 
-    const result = await getAdminTickets({ page: 1 });
+    const result = await getAdminTickets(baseQuery());
 
     expect(result).toBeNull();
   });
@@ -181,7 +346,7 @@ describe("getAdminTickets", () => {
     const fake = makeFakeClient({ data: [ticketRow()], error: null, count: 1 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    await getAdminTickets({ page: 1 });
+    await getAdminTickets(baseQuery({ q: "printer", status: "new", priority: "high", assignee: "profile-7" }));
 
     expect(fake.insert).not.toHaveBeenCalled();
     expect(fake.update).not.toHaveBeenCalled();
@@ -193,7 +358,7 @@ describe("getAdminTickets", () => {
     const fake = makeFakeClient({ data: [], error: null, count: 0 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    await getAdminTickets({ page: 1 });
+    await getAdminTickets(baseQuery());
 
     const selectArg = String(fake.select.mock.calls[0][0]);
     expect(selectArg).not.toMatch(/\bauthor_id\b/);
@@ -201,14 +366,15 @@ describe("getAdminTickets", () => {
     expect(selectArg).toMatch(/full_name/);
   });
 
-  it("the returned item shape never carries a raw author_id/assignee_id field", async () => {
+  it("the returned item shape never carries a raw author_id/assignee_id field, or email", async () => {
     const fake = makeFakeClient({ data: [ticketRow()], error: null, count: 1 });
     createDataApiClient.mockReturnValue(fake.client);
 
-    const result = await getAdminTickets({ page: 1 });
+    const result = await getAdminTickets(baseQuery());
 
     expect(result?.items[0]).not.toHaveProperty("authorId");
     expect(result?.items[0]).not.toHaveProperty("assigneeId");
+    expect(result?.items[0]).not.toHaveProperty("email");
   });
 
   describe("authorization boundary (requireAdmin)", () => {
@@ -224,7 +390,7 @@ describe("getAdminTickets", () => {
         return fake.client;
       });
 
-      await getAdminTickets({ page: 1 });
+      await getAdminTickets(baseQuery());
 
       expect(callOrder).toEqual(["requireAdmin", "createDataApiClient"]);
       expect(fake.range).toHaveBeenCalledTimes(1);
@@ -237,7 +403,7 @@ describe("getAdminTickets", () => {
       // that getAdminTickets() never swallows it and never reaches the query.
       requireAdmin.mockRejectedValue(new Error("NEXT_REDIRECT;/unauthorized"));
 
-      await expect(getAdminTickets({ page: 1 })).rejects.toThrow("NEXT_REDIRECT");
+      await expect(getAdminTickets(baseQuery())).rejects.toThrow("NEXT_REDIRECT");
 
       expect(createDataApiClient).not.toHaveBeenCalled();
     });
@@ -248,7 +414,7 @@ describe("getAdminTickets", () => {
       // rejection here (see the file-level comment on the requireAdmin mock).
       requireAdmin.mockRejectedValue(new Error("NEXT_REDIRECT;/login"));
 
-      await expect(getAdminTickets({ page: 1 })).rejects.toThrow("NEXT_REDIRECT");
+      await expect(getAdminTickets(baseQuery())).rejects.toThrow("NEXT_REDIRECT");
 
       expect(createDataApiClient).not.toHaveBeenCalled();
     });
@@ -258,21 +424,18 @@ describe("getAdminTickets", () => {
       createDataApiClient.mockReturnValue(fake.client);
       requireAdmin.mockResolvedValue(ADMIN_PROFILE);
 
-      const result = await getAdminTickets({ page: 1 });
+      const result = await getAdminTickets(baseQuery());
 
       expect(requireAdmin).toHaveBeenCalledTimes(1);
       expect(createDataApiClient).toHaveBeenCalledTimes(1);
       expect(result?.items).toHaveLength(1);
     });
 
-    it("no user-supplied role or id ever participates in the authorization check", async () => {
+    it("no user-supplied role or id ever participates in the authorization check — filters don't reach requireAdmin() either", async () => {
       const fake = makeFakeClient({ data: [], error: null, count: 0 });
       createDataApiClient.mockReturnValue(fake.client);
 
-      // The query itself carries no role/id — only pagination — and
-      // requireAdmin() is called with no arguments at all: nothing from
-      // the caller's input can influence which profile/role gets checked.
-      await getAdminTickets({ page: 1 });
+      await getAdminTickets(baseQuery({ assignee: "attacker-supplied-id", status: "new" }));
 
       expect(requireAdmin.mock.calls[0]).toEqual([]);
     });

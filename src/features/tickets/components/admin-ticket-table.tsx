@@ -6,6 +6,7 @@ import type { AdminTicketListItem } from "@/features/tickets/types/ticket";
 
 type AdminTicketTableProps = {
   items: AdminTicketListItem[];
+  hasActiveFilters: boolean;
 };
 
 /**
@@ -14,13 +15,18 @@ type AdminTicketTableProps = {
  * ticket's own author), which an admin registry must never reuse; a
  * dedicated, safe admin detail route doesn't exist yet and is out of
  * scope for this PR, so ticket identity is shown as plain text.
+ *
+ * `hasActiveFilters` distinguishes "the registry is genuinely empty" from
+ * "these filters just don't match anything" without an extra unbounded
+ * query — the caller already knows whether q/status/priority/assignee are
+ * active (see hasActiveAdminTicketFilters in schemas/admin-list-query.ts).
  */
-export function AdminTicketTable({ items }: AdminTicketTableProps) {
+export function AdminTicketTable({ items, hasActiveFilters }: AdminTicketTableProps) {
   if (items.length === 0) {
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Заявок пока нет.
+          {hasActiveFilters ? "По заданным фильтрам заявки не найдены." : "Заявок пока нет."}
         </CardContent>
       </Card>
     );

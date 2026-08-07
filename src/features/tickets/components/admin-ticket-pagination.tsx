@@ -2,16 +2,27 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ADMIN_TICKET_PAGE_SIZE } from "@/features/tickets/queries/get-admin-tickets";
-import type { AdminTicketListQuery } from "@/features/tickets/schemas/admin-list-query";
+import { ADMIN_TICKET_PAGE_SIZE, type AdminTicketListQuery } from "@/features/tickets/schemas/admin-list-query";
 
 type AdminTicketPaginationProps = {
   query: AdminTicketListQuery;
   total: number;
 };
 
-function buildHref(page: number): string {
+/**
+ * Only ever writes back normalized, whitelisted query values (the same
+ * `query` object the page already validated via
+ * parseAdminTicketListQuery/adminTicketListQuerySchema) — never a raw,
+ * unrecognized param from the incoming request. `page` is the only field
+ * this function itself varies; q/status/priority/assignee are carried
+ * through unchanged, so Next/Previous never lose the active filters.
+ */
+export function buildAdminTicketHref(query: AdminTicketListQuery, page: number): string {
   const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.status !== "all") params.set("status", query.status);
+  if (query.priority !== "all") params.set("priority", query.priority);
+  if (query.assignee) params.set("assignee", query.assignee);
   params.set("page", String(page));
   return `/admin/tickets?${params.toString()}`;
 }
@@ -35,7 +46,7 @@ export function AdminTicketPagination({ query, total }: AdminTicketPaginationPro
       <div className="flex gap-2">
         {hasPrev ? (
           <Button asChild variant="outline" size="sm">
-            <Link href={buildHref(currentPage - 1)} rel="prev">
+            <Link href={buildAdminTicketHref(query, currentPage - 1)} rel="prev">
               <ChevronLeft />
               Назад
             </Link>
@@ -49,7 +60,7 @@ export function AdminTicketPagination({ query, total }: AdminTicketPaginationPro
 
         {hasNext ? (
           <Button asChild variant="outline" size="sm">
-            <Link href={buildHref(currentPage + 1)} rel="next">
+            <Link href={buildAdminTicketHref(query, currentPage + 1)} rel="next">
               Вперёд
               <ChevronRight />
             </Link>
