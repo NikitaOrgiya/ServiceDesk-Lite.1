@@ -1,5 +1,14 @@
 # ServiceDesk Lite — Security Model
 
+> **Legacy document:** describes the original Supabase-era prototype
+> (`service_role`, `anon`, `handle_new_user()`, Supabase migration
+> numbering) and was **not** updated for the current Neon Auth/Neon Data
+> API implementation in this repository. Retained for historical context
+> only — the reasoning about RLS recursion, constraints, etc. is
+> conceptually still relevant, but names/roles/migration numbers below do
+> not match `drizzle/*.sql`. See the main [README](../README.md) (sections
+> 6–13, 19) for the current, accurate Neon architecture and security model.
+
 Companion to [`docs/database.md`](./database.md), focused specifically on
 the permission matrix and the hardening checklist. See `database.md` for
 schema/RPC/RLS/GRANT details and rationale.

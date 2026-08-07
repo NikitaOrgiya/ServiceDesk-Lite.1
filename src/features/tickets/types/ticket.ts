@@ -106,3 +106,17 @@ export type EmployeeDashboardCounts = {
   waiting: number;
   done: number;
 };
+
+/**
+ * Admin dashboard counters — deliberately a different shape from
+ * EmployeeDashboardCounts (total/unassigned instead of open/waiting):
+ * the admin dashboard summarizes every ticket, so "how many have no
+ * assignee yet" is a meaningful triage signal that has no equivalent on
+ * an employee's own-tickets-only dashboard.
+ */
+export type AdminDashboardCounts = {
+  total: number;
+  unassigned: number;
+  inProgress: number;
+  done: number;
+};

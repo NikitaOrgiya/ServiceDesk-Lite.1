@@ -44,6 +44,22 @@ describe("addTicketCommentAction", () => {
     expect(rpc).toHaveBeenCalledWith("add_ticket_comment", expect.any(Object));
   });
 
+  it("calls requireEmployee before validating the ticket id/message (auth -> validation -> Data API/RPC)", async () => {
+    const callOrder: string[] = [];
+    requireEmployee.mockImplementation(async () => {
+      callOrder.push("requireEmployee");
+      return { id: "u1", role: "employee" };
+    });
+    rpc.mockImplementation(async () => {
+      callOrder.push("rpc");
+      return { error: null };
+    });
+
+    await addTicketCommentAction(TICKET_ID, validFormData());
+
+    expect(callOrder).toEqual(["requireEmployee", "rpc"]);
+  });
+
   it("never invokes the Data API when authorization fails", async () => {
     requireEmployee.mockRejectedValue(new Error("NEXT_REDIRECT"));
 
@@ -53,17 +69,18 @@ describe("addTicketCommentAction", () => {
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("never invokes the Data API for an invalid ticket id", async () => {
+  it("an invalid ticket id is blocked after a successful auth check, never reaching the Data API", async () => {
     requireEmployee.mockResolvedValue({ id: "u1", role: "employee" });
 
     const result = await addTicketCommentAction("not-a-uuid", validFormData());
 
     expect(result.error).toBeTruthy();
-    expect(requireEmployee).not.toHaveBeenCalled();
+    expect(requireEmployee).toHaveBeenCalledTimes(1);
+    expect(createDataApiClient).not.toHaveBeenCalled();
     expect(rpc).not.toHaveBeenCalled();
   });
 
-  it("never invokes the Data API for an empty comment", async () => {
+  it("an empty comment is blocked after a successful auth check, never reaching the Data API", async () => {
     requireEmployee.mockResolvedValue({ id: "u1", role: "employee" });
 
     const formData = new FormData();
@@ -72,6 +89,25 @@ describe("addTicketCommentAction", () => {
     const result = await addTicketCommentAction(TICKET_ID, formData);
 
     expect(result.error).toBeTruthy();
+    expect(requireEmployee).toHaveBeenCalledTimes(1);
     expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("success still revalidates the same path as before", async () => {
+    requireEmployee.mockResolvedValue({ id: "u1", role: "employee" });
+    rpc.mockResolvedValue({ error: null });
+
+    await addTicketCommentAction(TICKET_ID, validFormData());
+
+    expect(revalidatePath).toHaveBeenCalledWith(`/app/tickets/${TICKET_ID}`);
+  });
+
+  it("an RPC failure never revalidates anything", async () => {
+    requireEmployee.mockResolvedValue({ id: "u1", role: "employee" });
+    rpc.mockResolvedValue({ error: { message: "boom", code: "P0002" } });
+
+    await addTicketCommentAction(TICKET_ID, validFormData());
+
+    expect(revalidatePath).not.toHaveBeenCalled();
   });
 });
