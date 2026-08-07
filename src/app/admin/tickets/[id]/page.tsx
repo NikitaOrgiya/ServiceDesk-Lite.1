@@ -4,6 +4,8 @@ import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { ticketIdSchema } from "@/features/tickets/schemas/ticket-id";
 import { getAdminTicketDetail } from "@/features/tickets/queries/get-admin-ticket";
 import { TicketDetails } from "@/features/tickets/components/ticket-details";
+import { AdminTicketStatusForm } from "@/features/tickets/components/admin-ticket-status-form";
+import { AdminTicketPriorityForm } from "@/features/tickets/components/admin-ticket-priority-form";
 
 // Reads one RLS-scoped ticket per request — must never be statically cached.
 export const dynamic = "force-dynamic";
@@ -40,6 +42,15 @@ export default async function AdminTicketDetailPage({ params }: AdminTicketDetai
       <h2 className="text-xl font-semibold">Заявка {ticket.publicNumber}</h2>
 
       <TicketDetails ticket={ticket} />
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <AdminTicketStatusForm key={ticket.status} ticketId={ticket.id} currentStatus={ticket.status} />
+        <AdminTicketPriorityForm
+          key={ticket.priority}
+          ticketId={ticket.id}
+          currentPriority={ticket.priority}
+        />
+      </div>
     </div>
   );
 }

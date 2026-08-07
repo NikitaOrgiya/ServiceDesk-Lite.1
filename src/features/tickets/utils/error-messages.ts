@@ -14,6 +14,11 @@ export const TICKET_ERROR_MESSAGES = {
   adminList: "Не удалось загрузить реестр заявок.",
   detail: "Не удалось загрузить заявку.",
   history: "Не удалось загрузить историю заявки.",
+  adminUpdateStatus: "Не удалось изменить статус заявки. Попробуйте ещё раз позже.",
+  adminUpdatePriority: "Не удалось изменить приоритет заявки. Попробуйте ещё раз позже.",
+  adminInvalidStatusTransition: "Недопустимый переход статуса.",
+  adminTicketNotFound: "Заявка не найдена или недоступна.",
+  adminNotAuthorized: "Недостаточно прав для выполнения действия.",
 } as const;
 
 export type TicketErrorContext = keyof typeof TICKET_ERROR_MESSAGES;
