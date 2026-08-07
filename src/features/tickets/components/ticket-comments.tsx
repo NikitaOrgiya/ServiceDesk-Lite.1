@@ -2,15 +2,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatRole } from "@/features/auth/roles";
 import { formatDateTime } from "@/features/tickets/utils/format-date";
-import { CommentForm } from "@/features/tickets/components/comment-form";
+import { CommentForm, type CommentSubmitAction } from "@/features/tickets/components/comment-form";
 import type { TicketCommentItem } from "@/features/tickets/types/ticket";
 
 type TicketCommentsProps = {
   ticketId: string;
   comments: TicketCommentItem[];
+  /** Forwarded to CommentForm as-is — see CommentSubmitAction's own comment for why this stays a prop instead of an import. */
+  action: CommentSubmitAction;
 };
 
-export function TicketComments({ ticketId, comments }: TicketCommentsProps) {
+export function TicketComments({ ticketId, comments, action }: TicketCommentsProps) {
   return (
     <Card>
       <CardHeader>
@@ -43,7 +45,7 @@ export function TicketComments({ ticketId, comments }: TicketCommentsProps) {
 
         <Separator />
 
-        <CommentForm ticketId={ticketId} />
+        <CommentForm ticketId={ticketId} action={action} />
       </CardContent>
     </Card>
   );

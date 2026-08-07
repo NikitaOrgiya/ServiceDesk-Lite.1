@@ -4,11 +4,16 @@ import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { ticketIdSchema } from "@/features/tickets/schemas/ticket-id";
 import { getAdminTicketDetail } from "@/features/tickets/queries/get-admin-ticket";
 import { getAdminAssigneeOptions } from "@/features/tickets/queries/get-admin-assignee-options";
+import { getAdminTicketComments } from "@/features/tickets/queries/get-admin-ticket-comments";
+import { getAdminTicketHistory } from "@/features/tickets/queries/get-admin-ticket-history";
 import { TicketDetails } from "@/features/tickets/components/ticket-details";
+import { TicketComments } from "@/features/tickets/components/ticket-comments";
+import { TicketHistory } from "@/features/tickets/components/ticket-history";
 import { AdminTicketStatusForm } from "@/features/tickets/components/admin-ticket-status-form";
 import { AdminTicketPriorityForm } from "@/features/tickets/components/admin-ticket-priority-form";
 import { AdminTicketAssigneeForm } from "@/features/tickets/components/admin-ticket-assignee-form";
 import { AdminTicketDueAtForm } from "@/features/tickets/components/admin-ticket-due-at-form";
+import { addAdminTicketCommentAction } from "@/features/tickets/actions/add-admin-ticket-comment";
 
 // Reads one RLS-scoped ticket per request — must never be statically cached.
 export const dynamic = "force-dynamic";
@@ -27,15 +32,18 @@ export default async function AdminTicketDetailPage({ params }: AdminTicketDetai
     notFound();
   }
 
-  // Ticket-missing and assignee-options-failed are independent failure
-  // modes: getAdminTicketDetail() returns null (never throws) on its own
-  // failure, and getAdminAssigneeOptions() does the same on its own — so
-  // Promise.all here can't let one function's failure masquerade as the
-  // other's; only a missing/inaccessible *ticket* 404s the page, an
-  // assignee-options failure only degrades AdminTicketAssigneeForm below.
-  const [ticket, assigneeOptions] = await Promise.all([
+  // Ticket-missing, assignee-options-failed, comments-failed, and
+  // history-failed are all independent failure modes: every one of these
+  // functions returns null/[] (never throws) on its own failure, so
+  // Promise.all here can't let any of them masquerade as another's; only a
+  // missing/inaccessible *ticket* 404s the page. Comments/history failures
+  // just render as an empty list — same degrade-gracefully contract the
+  // employee route's getEmployeeTicketDetail already follows internally.
+  const [ticket, assigneeOptions, comments, history] = await Promise.all([
     getAdminTicketDetail(idResult.data),
     getAdminAssigneeOptions(),
+    getAdminTicketComments(idResult.data),
+    getAdminTicketHistory(idResult.data),
   ]);
 
   if (!ticket) {
@@ -71,6 +79,9 @@ export default async function AdminTicketDetailPage({ params }: AdminTicketDetai
         />
         <AdminTicketDueAtForm key={ticket.dueAt ?? "unset"} ticketId={ticket.id} currentDueAt={ticket.dueAt} />
       </div>
+
+      <TicketComments ticketId={ticket.id} comments={comments} action={addAdminTicketCommentAction} />
+      <TicketHistory history={history} />
     </div>
   );
 }
