@@ -517,7 +517,7 @@ security/functional-тесты) — прогон на настоящем лок�
 | `npm run build` (Next.js 16, Turbopack) | ✅ passed |
 | `npm run test:e2e` (smoke) | ✅ 8/8 passed — запущено против настоящего `npm run dev` в этой сессии (см. ниже) |
 | `npm run test:e2e:auth` / `test:e2e:employee` | ⏭ **не запускались против Production** — реальный Neon Auth/Data API workflow вместо этого проверен вручную (см. «B. Ручная проверка в Production» ниже) |
-| Все 11 `drizzle/*.sql` миграций | ✅ применены с нуля на **настоящем локальном PostgreSQL 16** (установлен в этой сессии), включая оба hardening-DO-блока (`search_path`) |
+| Все 12 `drizzle/*.sql` миграций | ✅ применены с нуля на **настоящем локальном PostgreSQL 16** (установлен в этой сессии), включая оба hardening-DO-блока (`search_path`) |
 | `neon/tests/security_assertions.sql` | ✅ passed на том же локальном PostgreSQL 16 |
 | `neon/tests/functional_checks.sql` | ✅ passed (после исправления реальной ошибки, найденной при запуске — см. ниже) |
 | `neon/tests/admin_bootstrap_checks.sql` | ✅ passed |
@@ -728,8 +728,8 @@ docs/
 
 ## Демонстрация
 
-- **Live demo:** Production-развёртывание на Vercel существует и прошло
-  ручную проверку (см. [«Что реально проверено»](#что-реально-проверено));
-  публичный URL не зафиксирован в метаданных этого репозитория — добавьте
-  ссылку сюда отдельно, без публикации тестовых учётных данных.
+- **Live demo:** [https://servicedesk-lite-tau.vercel.app](https://servicedesk-lite-tau.vercel.app)
+  — Production-развёртывание на Vercel; employee/admin workflow вручную
+  проверены против реального Neon Auth + Neon Data API (см.
+  [«Что реально проверено»](#что-реально-проверено)).
 - **Скриншоты / демо-видео:** пока не добавлены.
