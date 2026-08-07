@@ -20,14 +20,19 @@ export type CancelTicketActionResult = {
  * only a UX nicety on the client — the real protection is the RPC's own
  * `WHERE author_id = auth.user_id() AND status = 'new'` check, which this
  * function relies on rather than duplicating client-side.
+ *
+ * requireEmployee() runs first, unconditionally, before ticketId is even
+ * validated — the project-wide invariant (auth -> validation -> Data
+ * API/RPC), matching every admin action's own requireAdmin()-first
+ * ordering.
  */
 export async function cancelTicketAction(ticketId: string): Promise<CancelTicketActionResult> {
+  await requireEmployee(`/app/tickets/${ticketId}`);
+
   const idResult = ticketIdSchema.safeParse(ticketId);
   if (!idResult.success) {
     return { error: getTicketErrorMessage("cancel") };
   }
-
-  await requireEmployee(`/app/tickets/${ticketId}`);
 
   const client = createDataApiClient();
   const { error } = await client.rpc("cancel_own_ticket", { p_ticket_id: idResult.data });

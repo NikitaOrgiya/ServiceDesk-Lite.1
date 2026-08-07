@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createDataApiClient } from "@/lib/neon/data-api";
+import { requireEmployee } from "@/features/auth/server/require-employee";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 import { toSingleEmbed } from "@/features/tickets/utils/postgrest-embed";
@@ -34,10 +35,18 @@ export type EmployeeTicketsResult = {
  * name or page size ever reaches `.order()`/`.range()`. The assignee name
  * is embedded in this same query (one round trip for the whole page, not
  * one profile lookup per row) via the Drizzle-generated FK constraint name.
+ *
+ * requireEmployee() runs first, unconditionally, before the Data API
+ * client is created — an independent defense-in-depth boundary matching
+ * every admin data-access function's own requireAdmin() call, rather than
+ * relying solely on the `/app` layout's own requireEmployee() call and
+ * `tickets_select_own_or_admin` RLS to have already scoped the caller.
  */
 export async function getEmployeeTickets(
   query: TicketListQuery
 ): Promise<EmployeeTicketsResult | null> {
+  await requireEmployee();
+
   const client = createDataApiClient();
 
   let builder = client

@@ -1,18 +1,24 @@
-import { AlertTriangle, CheckCircle2, ListTodo, UserX } from "lucide-react";
+import { CheckCircle2, ListTodo, Loader2, UserX } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { StatCard } from "@/features/tickets/components/stat-card";
+import { getAdminDashboardCounts } from "@/features/tickets/queries/get-admin-dashboard";
+import { getTicketErrorMessage } from "@/features/tickets/utils/error-messages";
 
-// Demo values only — real aggregates arrive once the Supabase schema and
-// admin-facing queries are built in a later stage.
-const DEMO_STATS = [
-  { label: "Всего заявок", value: 0, icon: ListTodo },
-  { label: "Без исполнителя", value: 0, icon: UserX },
-  { label: "Просрочено", value: 0, icon: AlertTriangle },
-  { label: "Закрыто сегодня", value: 0, icon: CheckCircle2 },
-] as const;
+// Reads every ticket's status/assignment visible to the caller under RLS —
+// must never be statically cached or shared across admins.
+export const dynamic = "force-dynamic";
 
-export default function AdminDashboardPage() {
+export default async function AdminDashboardPage() {
+  const counts = await getAdminDashboardCounts();
+
+  const stats = [
+    { label: "Всего заявок", value: counts?.total ?? 0, icon: ListTodo },
+    { label: "Без исполнителя", value: counts?.unassigned ?? 0, icon: UserX },
+    { label: "В работе", value: counts?.inProgress ?? 0, icon: Loader2 },
+    { label: "Завершённые", value: counts?.done ?? 0, icon: CheckCircle2 },
+  ] as const;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -23,18 +29,17 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {DEMO_STATS.map((stat) => (
+        {stats.map((stat) => (
           <StatCard key={stat.label} {...stat} />
         ))}
       </div>
 
-      <Alert>
-        <AlertTitle>Демонстрационные данные</AlertTitle>
-        <AlertDescription>
-          Показатели пока нулевые. Проверка ролей администратора и реальные
-          запросы к базе данных появятся на следующем этапе.
-        </AlertDescription>
-      </Alert>
+      {counts === null ? (
+        <Alert variant="destructive">
+          <AlertTitle>Не удалось загрузить сводку</AlertTitle>
+          <AlertDescription>{getTicketErrorMessage("dashboard")}</AlertDescription>
+        </Alert>
+      ) : null}
     </div>
   );
 }

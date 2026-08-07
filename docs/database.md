@@ -1,5 +1,13 @@
 # ServiceDesk Lite — Database
 
+> **Legacy document:** describes the original Supabase-era prototype (its
+> own stage numbering, migration file names, and `auth.users`-trigger-based
+> provisioning) and was **not** updated for the current Neon Auth/Neon Data
+> API implementation in this repository — the actual migrations live in
+> `drizzle/0000`–`drizzle/0011` with different names/order. Retained for
+> historical context only. See the main [README](../README.md) (sections
+> 6–13) for the current, accurate Neon schema/RPC/RLS model.
+
 Stage 2 deliverable: the full PostgreSQL/Supabase schema, RPC surface, RLS
 model, and GRANT model. Authentication itself, real user provisioning, and
 wiring the Next.js app to any of this are stage 3 — nothing here is called

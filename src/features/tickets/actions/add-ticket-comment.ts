@@ -18,17 +18,22 @@ export type AddCommentActionResult = {
  * Adds a comment exclusively through `public.add_ticket_comment` — never a
  * direct `.insert()`. The ticket id and message are both re-validated here
  * regardless of what the client already checked.
+ *
+ * requireEmployee() runs first, unconditionally, before ticketId/message
+ * are even validated — the project-wide invariant (auth -> validation ->
+ * Data API/RPC), matching every admin action's own requireAdmin()-first
+ * ordering.
  */
 export async function addTicketCommentAction(
   ticketId: string,
   formData: FormData
 ): Promise<AddCommentActionResult> {
+  await requireEmployee(`/app/tickets/${ticketId}`);
+
   const idResult = ticketIdSchema.safeParse(ticketId);
   if (!idResult.success) {
     return { error: getTicketErrorMessage("comment") };
   }
-
-  await requireEmployee(`/app/tickets/${ticketId}`);
 
   const parsed = addCommentSchema.safeParse({ message: formData.get("message") });
   if (!parsed.success) {

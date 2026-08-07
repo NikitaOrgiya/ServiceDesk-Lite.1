@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createDataApiClient } from "@/lib/neon/data-api";
+import { requireEmployee } from "@/features/auth/server/require-employee";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 import { toSingleEmbed } from "@/features/tickets/utils/postgrest-embed";
@@ -24,6 +25,12 @@ export type TicketDetailResult = {
  * comments and history are each a separate query — that is the allowed
  * shape (one main query + separate related-collection queries), not N+1.
  *
+ * requireEmployee() runs first, unconditionally, before the Data API
+ * client is created — an independent defense-in-depth boundary matching
+ * every admin data-access function's own requireAdmin() call, rather than
+ * relying solely on the `/app` layout's own requireEmployee() call and
+ * `tickets_select_own_or_admin` RLS to have already scoped the caller.
+ *
  * Returns `null` both when the ticket does not exist and when it exists
  * but belongs to someone else — `tickets_select_own_or_admin` RLS makes
  * both cases return zero rows from the caller's point of view, so this
@@ -31,6 +38,8 @@ export type TicketDetailResult = {
  * (see docs/security.md: never reveal another user's ticket exists).
  */
 export async function getEmployeeTicketDetail(ticketId: string): Promise<TicketDetailResult | null> {
+  await requireEmployee();
+
   const client = createDataApiClient();
 
   const { data: ticketRow, error: ticketError } = await client
