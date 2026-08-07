@@ -8,6 +8,7 @@ import { TicketDetails } from "@/features/tickets/components/ticket-details";
 import { TicketComments } from "@/features/tickets/components/ticket-comments";
 import { TicketHistory } from "@/features/tickets/components/ticket-history";
 import { CancelTicketButton } from "@/features/tickets/components/cancel-ticket-button";
+import { addTicketCommentAction } from "@/features/tickets/actions/add-ticket-comment";
 
 // Reads one RLS-scoped ticket per request — must never be statically cached.
 export const dynamic = "force-dynamic";
@@ -51,7 +52,7 @@ export default async function TicketDetailPage({ params }: TicketDetailPageProps
       </div>
 
       <TicketDetails ticket={ticket} />
-      <TicketComments ticketId={ticket.id} comments={comments} />
+      <TicketComments ticketId={ticket.id} comments={comments} action={addTicketCommentAction} />
       <TicketHistory history={history} />
     </div>
   );

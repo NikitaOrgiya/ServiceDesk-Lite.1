@@ -17,13 +17,25 @@ import {
 } from "@/components/ui/form";
 import { cn } from "@/lib/utils";
 import { addCommentSchema, type AddCommentInput } from "@/features/tickets/schemas/comment";
-import { addTicketCommentAction } from "@/features/tickets/actions/add-ticket-comment";
+
+/**
+ * Matches both addTicketCommentAction (employee) and
+ * addAdminTicketCommentAction (admin) — same (ticketId, formData) => Promise<{error?}>
+ * shape, so this presentational form stays route/auth-agnostic and never
+ * imports either Server Action directly. The caller (TicketComments, via
+ * its own `action` prop) decides which one actually runs.
+ */
+export type CommentSubmitAction = (
+  ticketId: string,
+  formData: FormData
+) => Promise<{ error?: string }>;
 
 type CommentFormProps = {
   ticketId: string;
+  action: CommentSubmitAction;
 };
 
-export function CommentForm({ ticketId }: CommentFormProps) {
+export function CommentForm({ ticketId, action }: CommentFormProps) {
   const [formError, setFormError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -38,7 +50,7 @@ export function CommentForm({ ticketId }: CommentFormProps) {
       const formData = new FormData();
       formData.set("message", values.message);
 
-      const result = await addTicketCommentAction(ticketId, formData);
+      const result = await action(ticketId, formData);
       if (result?.error) {
         setFormError(result.error);
         return;
