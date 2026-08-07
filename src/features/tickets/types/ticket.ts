@@ -23,6 +23,27 @@ export type TicketListItem = {
   assigneeName: string | null;
 };
 
+/**
+ * One row of the admin-wide ticket registry (src/app/admin/tickets) —
+ * distinct from TicketListItem (an employee's own tickets: no requester
+ * column needed, since it's always the caller) by also carrying the
+ * requester's display name and no category, matching exactly what the
+ * registry actually shows. Never carries author_id/assignee_id — only the
+ * resolved display name via the same RLS-scoped profiles embed the query
+ * layer already uses elsewhere.
+ */
+export type AdminTicketListItem = {
+  id: string;
+  publicNumber: string;
+  title: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  requesterName: string;
+  assigneeName: string | null;
+  createdAt: string;
+  dueAt: string | null;
+};
+
 export type TicketDetail = {
   id: string;
   publicNumber: string;
