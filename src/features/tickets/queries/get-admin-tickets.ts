@@ -5,11 +5,30 @@ import { requireAdmin } from "@/features/auth/server/require-admin";
 import { logger } from "@/lib/logger/logger";
 import { sanitizeError } from "@/lib/logger/sanitize-error";
 import { toSingleEmbed } from "@/features/tickets/utils/postgrest-embed";
-import type { AdminTicketListQuery } from "@/features/tickets/schemas/admin-list-query";
+import {
+  ADMIN_TICKET_PAGE_SIZE,
+  ADMIN_TICKET_UNASSIGNED,
+  type AdminTicketListQuery,
+} from "@/features/tickets/schemas/admin-list-query";
 import type { TicketPriority } from "@/features/tickets/schemas/create-ticket";
 import type { AdminTicketListItem, TicketStatus } from "@/features/tickets/types/ticket";
 
-export const ADMIN_TICKET_PAGE_SIZE = 20;
+export { ADMIN_TICKET_PAGE_SIZE };
+
+/**
+ * PostgREST's `or()`/`and()` filter syntax treats `,`, `(`, `)` and `"` as
+ * meta-characters of its own mini filter language — a raw search term
+ * containing them could otherwise inject extra filter clauses into the
+ * request. Wrapping the value in a double-quoted PostgREST string (and
+ * escaping any embedded backslash/quote) makes it opaque to that parser.
+ * This is unrelated to SQL: the Neon Data API client does the actual SQL
+ * parameterization; this only sanitizes the filter-string argument handed
+ * to it — there is no manual SQL string concatenation anywhere here.
+ * Identical to the same helper in get-employee-tickets.ts.
+ */
+function escapePostgrestValue(value: string): string {
+  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
 
 export type AdminTicketsResult = {
   items: AdminTicketListItem[];
@@ -44,28 +63,64 @@ export type AdminTicketsResult = {
  * caller-supplied role/id (there is no such parameter) nor Neon Auth's own
  * internal admin concept, only public.profiles.role.
  *
+ * Search/status/priority/assignee all come from the already-whitelisted
+ * AdminTicketListQuery (see schemas/admin-list-query.ts) — status/priority
+ * are closed enums, so no caller-supplied column name or arbitrary value
+ * ever reaches `.eq()`. `assignee` is a free-form technical id (there is no
+ * fixed, app-controlled id format to validate against) but participates
+ * only as a plain `.eq()`/`.is()` filter value on an already RLS-scoped
+ * result set — it can only ever narrow which of the caller's *already
+ * visible* rows come back, never widen visibility, and an id that matches
+ * no real assignee simply yields zero rows rather than an error. `q` is
+ * ANDed with every other filter but is itself an OR between ticket number
+ * and title (see the `.or()` call below) — deliberately not description:
+ * unlike public_number/title, description has no supporting index and is
+ * unbounded free text, and the employee registry's own search (get-
+ * employee-tickets.ts) never searched it either, for the same reason.
+ *
  * Sort is deterministic: newest first, with id as a stable tie-breaker for
  * rows sharing the same created_at timestamp, so pagination never
  * reshuffles rows between requests (unlike relying on Postgres's
- * unspecified default order).
+ * unspecified default order). Count is always of the *filtered* set, so
+ * pagination reflects what the current filters actually match.
  */
 export async function getAdminTickets(query: AdminTicketListQuery): Promise<AdminTicketsResult | null> {
   await requireAdmin();
 
   const client = createDataApiClient();
 
-  const from = (query.page - 1) * ADMIN_TICKET_PAGE_SIZE;
-  const to = from + ADMIN_TICKET_PAGE_SIZE - 1;
-
-  const { data, error, count } = await client
+  let builder = client
     .from("tickets")
     .select(
       "id, public_number, title, priority, status, created_at, due_at, requester:profiles!tickets_author_id_profiles_id_fk(full_name), assignee:profiles!tickets_assignee_id_profiles_id_fk(full_name)",
       { count: "exact" }
-    )
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: true })
-    .range(from, to);
+    );
+
+  if (query.status !== "all") {
+    builder = builder.eq("status", query.status);
+  }
+
+  if (query.priority !== "all") {
+    builder = builder.eq("priority", query.priority);
+  }
+
+  if (query.assignee === ADMIN_TICKET_UNASSIGNED) {
+    builder = builder.is("assignee_id", null);
+  } else if (query.assignee.length > 0) {
+    builder = builder.eq("assignee_id", query.assignee);
+  }
+
+  if (query.q.length > 0) {
+    const pattern = escapePostgrestValue(`%${query.q}%`);
+    builder = builder.or(`public_number.ilike.${pattern},title.ilike.${pattern}`);
+  }
+
+  builder = builder.order("created_at", { ascending: false }).order("id", { ascending: true });
+
+  const from = (query.page - 1) * ADMIN_TICKET_PAGE_SIZE;
+  const to = from + ADMIN_TICKET_PAGE_SIZE - 1;
+
+  const { data, error, count } = await builder.range(from, to);
 
   if (error) {
     const sanitized = sanitizeError(error);
